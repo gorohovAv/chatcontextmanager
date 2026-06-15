@@ -35,14 +35,16 @@ class PromptBuilderViewProvider implements vscode.WebviewViewProvider {
     ) {
         this._view = webviewView;
         webviewView.webview.options = { enableScripts: true };
-        webviewView.webview.html = this._getHtmlForWebview(webviewView.webview);
 
-        // Отправляем сохраненные промпты в webview при загрузке
-        webviewView.webview.postMessage({
-            type: 'loadPrompts',
-            systemPrompt: this.sysPromptManager.getSystemPrompt(),
-            projectPrompt: this.sysPromptManager.getProjectPrompt()
-        });
+        // Читаем актуальные значения промптов и сразу встраиваем их в HTML
+        const systemPrompt = this.sysPromptManager.getSystemPrompt();
+        const projectPrompt = this.sysPromptManager.getProjectPrompt();
+
+        webviewView.webview.html = this._getHtmlForWebview(
+            webviewView.webview,
+            systemPrompt,
+            projectPrompt
+        );
 
         webviewView.webview.onDidReceiveMessage(async (data) => {
             switch (data.type) {
@@ -97,19 +99,16 @@ class PromptBuilderViewProvider implements vscode.WebviewViewProvider {
     }) {
         let finalPrompt = '';
         
-        // 1. Системный промпт
         const systemPrompt = this.sysPromptManager.getSystemPrompt();
         if (systemPrompt.trim()) {
             finalPrompt += `# Системный промпт\n${systemPrompt.trim()}\n\n`;
         }
 
-        // 2. Промпт проекта
         const projectPrompt = this.sysPromptManager.getProjectPrompt();
         if (projectPrompt.trim()) {
             finalPrompt += `# Промпт проекта\n${projectPrompt.trim()}\n\n`;
         }
 
-        // 3. Дерево файлов (если чекбокс отмечен)
         if (options.includeTree) {
             const treeOptions: TreeOptions = {
                 useGitignore: options.useGitignore,
@@ -121,12 +120,10 @@ class PromptBuilderViewProvider implements vscode.WebviewViewProvider {
             }
         }
 
-        // 4. Основной текст пользователя
         if (userText.trim()) {
             finalPrompt += `# Задача\n${userText.trim()}\n\n`;
         }
         
-        // 5. Прикрепленные файлы
         for (const file of this.selectedFiles) {
             try {
                 const uri = vscode.Uri.parse(file.uri);
@@ -142,7 +139,15 @@ class PromptBuilderViewProvider implements vscode.WebviewViewProvider {
         vscode.window.showInformationMessage('✅ Промпт успешно скопирован в буфер обмена!');
     }
 
-    private _getHtmlForWebview(webview: vscode.Webview) {
+    private _getHtmlForWebview(
+        webview: vscode.Webview,
+        systemPrompt: string,
+        projectPrompt: string
+    ) {
+        // JSON.stringify безопасно экранирует все спецсимволы (\n, ", <, > и т.д.)
+        const safeSystemPrompt = JSON.stringify(systemPrompt);
+        const safeProjectPrompt = JSON.stringify(projectPrompt);
+
         return `<!DOCTYPE html>
         <html lang="ru">
         <head>
@@ -199,7 +204,6 @@ class PromptBuilderViewProvider implements vscode.WebviewViewProvider {
             </style>
         </head>
         <body>
-            <!-- Раскрывающийся блок с настройками промптов (скрыт по умолчанию) -->
             <details>
                 <summary>⚙️ Настройки промптов</summary>
                 <div style="margin-top: 10px;">
@@ -218,13 +222,11 @@ class PromptBuilderViewProvider implements vscode.WebviewViewProvider {
             <button id="addFileBtn" class="secondary">📎 Добавить файлы из проекта</button>
             <div id="fileList"></div>
             
-            <!-- Чекбокс для включения дерева файлов -->
             <div class="checkbox-container">
                 <input type="checkbox" id="includeTree">
                 <label for="includeTree">🌳 Дерево (добавить структуру файлов)</label>
             </div>
 
-            <!-- Блок настроек дерева (скрыт по умолчанию, появляется при включении чекбокса) -->
             <div id="treeSettings" class="tree-settings hidden">
                 <div class="checkbox-container" style="margin-bottom: 8px;">
                     <input type="checkbox" id="useGitignore">
@@ -242,12 +244,15 @@ class PromptBuilderViewProvider implements vscode.WebviewViewProvider {
                 const vscode = acquireVsCodeApi();
                 let files = [];
 
+                // Инициализируем поля сохранёнными промптами сразу при загрузке
+                document.getElementById('systemPrompt').value = ${safeSystemPrompt};
+                document.getElementById('projectPrompt').value = ${safeProjectPrompt};
+
                 const includeTreeEl = document.getElementById('includeTree');
                 const useGitignoreEl = document.getElementById('useGitignore');
                 const customIgnoreEl = document.getElementById('customIgnore');
                 const treeSettingsEl = document.getElementById('treeSettings');
 
-                // Показ/скрытие блока настроек дерева
                 function updateTreeSettingsVisibility() {
                     if (includeTreeEl.checked) {
                         treeSettingsEl.classList.remove('hidden');
@@ -256,7 +261,6 @@ class PromptBuilderViewProvider implements vscode.WebviewViewProvider {
                     }
                 }
 
-                // Включение/выключение textarea альтернативного ignore
                 function updateCustomIgnoreState() {
                     if (useGitignoreEl.checked) {
                         customIgnoreEl.classList.add('disabled');
@@ -304,9 +308,6 @@ class PromptBuilderViewProvider implements vscode.WebviewViewProvider {
                     if (message.type === 'updateFiles') {
                         files = message.files;
                         renderFiles();
-                    } else if (message.type === 'loadPrompts') {
-                        document.getElementById('systemPrompt').value = message.systemPrompt || '';
-                        document.getElementById('projectPrompt').value = message.projectPrompt || '';
                     }
                 });
 
