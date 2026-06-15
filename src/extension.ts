@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
 import { SystemPromptManager } from './sysPrompt';
-import { TreeManager } from './tree';
+import { TreeManager, TreeOptions } from './tree';
 
 export function activate(context: vscode.ExtensionContext) {
     console.log('🚀 [МОЕ РАСШИРЕНИЕ] Функция activate() вызвана!');
@@ -66,7 +66,11 @@ class PromptBuilderViewProvider implements vscode.WebviewViewProvider {
                     this._updateFileList();
                     break;
                 case 'compileAndCopy':
-                    await this._compileAndCopy(data.text, data.includeTree);
+                    await this._compileAndCopy(data.text, {
+                        includeTree: data.includeTree,
+                        useGitignore: data.useGitignore,
+                        customIgnore: data.customIgnore
+                    });
                     break;
                 case 'saveSystemPrompt':
                     await this.sysPromptManager.setSystemPrompt(data.prompt);
@@ -86,7 +90,11 @@ class PromptBuilderViewProvider implements vscode.WebviewViewProvider {
         }
     }
 
-    private async _compileAndCopy(userText: string, includeTree: boolean) {
+    private async _compileAndCopy(userText: string, options: {
+        includeTree?: boolean;
+        useGitignore?: boolean;
+        customIgnore?: string;
+    }) {
         let finalPrompt = '';
         
         // 1. Системный промпт
@@ -102,8 +110,12 @@ class PromptBuilderViewProvider implements vscode.WebviewViewProvider {
         }
 
         // 3. Дерево файлов (если чекбокс отмечен)
-        if (includeTree) {
-            const tree = await this.treeManager.getProjectTree();
+        if (options.includeTree) {
+            const treeOptions: TreeOptions = {
+                useGitignore: options.useGitignore,
+                customIgnore: options.customIgnore
+            };
+            const tree = await this.treeManager.getProjectTree(treeOptions);
             if (tree.trim()) {
                 finalPrompt += `# Структура проекта\n\`\`\`\n${tree}\`\`\`\n\n`;
             }
@@ -146,6 +158,7 @@ class PromptBuilderViewProvider implements vscode.WebviewViewProvider {
                     resize: vertical;
                 }
                 textarea.small { height: 80px; }
+                textarea.ignore { height: 100px; font-family: monospace; font-size: 0.85em; }
                 button { 
                     width: 100%; padding: 8px; margin-bottom: 10px; cursor: pointer;
                     background: var(--vscode-button-background); color: var(--vscode-button-foreground);
@@ -174,6 +187,15 @@ class PromptBuilderViewProvider implements vscode.WebviewViewProvider {
                 }
                 .checkbox-container input[type="checkbox"] { margin-right: 8px; }
                 label { cursor: pointer; }
+                .tree-settings {
+                    margin-top: 10px; padding: 10px;
+                    background: var(--vscode-editor-background);
+                    border: 1px solid var(--vscode-input-border);
+                    border-radius: 4px;
+                }
+                .tree-settings.hidden { display: none; }
+                .hint { font-size: 0.8em; color: var(--vscode-descriptionForeground); margin: 5px 0 8px 0; }
+                .disabled { opacity: 0.5; pointer-events: none; }
             </style>
         </head>
         <body>
@@ -201,6 +223,18 @@ class PromptBuilderViewProvider implements vscode.WebviewViewProvider {
                 <input type="checkbox" id="includeTree">
                 <label for="includeTree">🌳 Дерево (добавить структуру файлов)</label>
             </div>
+
+            <!-- Блок настроек дерева (скрыт по умолчанию, появляется при включении чекбокса) -->
+            <div id="treeSettings" class="tree-settings hidden">
+                <div class="checkbox-container" style="margin-bottom: 8px;">
+                    <input type="checkbox" id="useGitignore">
+                    <label for="useGitignore">📜 Использовать .gitignore</label>
+                </div>
+
+                <label style="display: block; margin-bottom: 5px; font-weight: bold;">Альтернативный ignore-файл:</label>
+                <div class="hint">Формат как у .gitignore. Не сохраняется — только для этого промпта.</div>
+                <textarea id="customIgnore" class="ignore" placeholder="node_modules&#10;dist&#10;*.log&#10;.env"></textarea>
+            </div>
             
             <button id="copyBtn">📋 В буфер обмена</button>
 
@@ -208,14 +242,51 @@ class PromptBuilderViewProvider implements vscode.WebviewViewProvider {
                 const vscode = acquireVsCodeApi();
                 let files = [];
 
+                const includeTreeEl = document.getElementById('includeTree');
+                const useGitignoreEl = document.getElementById('useGitignore');
+                const customIgnoreEl = document.getElementById('customIgnore');
+                const treeSettingsEl = document.getElementById('treeSettings');
+
+                // Показ/скрытие блока настроек дерева
+                function updateTreeSettingsVisibility() {
+                    if (includeTreeEl.checked) {
+                        treeSettingsEl.classList.remove('hidden');
+                    } else {
+                        treeSettingsEl.classList.add('hidden');
+                    }
+                }
+
+                // Включение/выключение textarea альтернативного ignore
+                function updateCustomIgnoreState() {
+                    if (useGitignoreEl.checked) {
+                        customIgnoreEl.classList.add('disabled');
+                        customIgnoreEl.setAttribute('disabled', 'disabled');
+                    } else {
+                        customIgnoreEl.classList.remove('disabled');
+                        customIgnoreEl.removeAttribute('disabled');
+                    }
+                }
+
+                includeTreeEl.addEventListener('change', updateTreeSettingsVisibility);
+                useGitignoreEl.addEventListener('change', updateCustomIgnoreState);
+                updateCustomIgnoreState();
+
                 document.getElementById('addFileBtn').addEventListener('click', () => {
                     vscode.postMessage({ type: 'addFile' });
                 });
 
                 document.getElementById('copyBtn').addEventListener('click', () => {
                     const text = document.getElementById('userText').value;
-                    const includeTree = document.getElementById('includeTree').checked;
-                    vscode.postMessage({ type: 'compileAndCopy', text: text, includeTree: includeTree });
+                    const includeTree = includeTreeEl.checked;
+                    const useGitignore = useGitignoreEl.checked;
+                    const customIgnore = customIgnoreEl.value;
+                    vscode.postMessage({ 
+                        type: 'compileAndCopy', 
+                        text: text, 
+                        includeTree: includeTree,
+                        useGitignore: useGitignore,
+                        customIgnore: customIgnore
+                    });
                 });
 
                 document.getElementById('saveSystemPromptBtn').addEventListener('click', () => {
