@@ -38,7 +38,6 @@ class PromptBuilderViewProvider implements vscode.WebviewViewProvider {
         this._view = webviewView;
         webviewView.webview.options = { enableScripts: true };
 
-        // Читаем актуальные значения промптов и сразу встраиваем их в HTML
         const systemPrompt = this.sysPromptManager.getSystemPrompt();
         const projectPrompt = this.sysPromptManager.getProjectPrompt();
 
@@ -96,7 +95,6 @@ class PromptBuilderViewProvider implements vscode.WebviewViewProvider {
             }
         });
 
-        // Initial update
         this._updateFileList();
     }
 
@@ -106,7 +104,7 @@ class PromptBuilderViewProvider implements vscode.WebviewViewProvider {
             const charCount = await this.payloadManager.getCompiledPromptLength(
                 this.sysPromptManager.getSystemPrompt(),
                 this.sysPromptManager.getProjectPrompt(),
-                '',
+                '', 
                 {
                     includeTree: false,
                     useGitignore: false,
@@ -127,7 +125,6 @@ class PromptBuilderViewProvider implements vscode.WebviewViewProvider {
         systemPrompt: string,
         projectPrompt: string
     ) {
-        // JSON.stringify безопасно экранирует все спецсимволы (\n, ", <, > и т.д.)
         const safeSystemPrompt = JSON.stringify(systemPrompt);
         const safeProjectPrompt = JSON.stringify(projectPrompt);
 
@@ -151,19 +148,6 @@ class PromptBuilderViewProvider implements vscode.WebviewViewProvider {
                     width: 100%; padding: 8px; margin-bottom: 10px; cursor: pointer;
                     background: var(--vscode-button-background); color: var(--vscode-button-foreground);
                     border: none; border-radius: 4px; font-weight: bold;
-                    position: relative;
-                }
-                .char-count-badge {
-                    position: absolute;
-                    top: -8px;
-                    right: 8px;
-                    background: var(--vscode-badge-background);
-                    color: var(--vscode-badge-foreground);
-                    border-radius: 10px;
-                    padding: 0 6px;
-                    font-size: 0.75em;
-                    min-width: 30px;
-                    text-align: center;
                 }
                 button:hover { background: var(--vscode-button-hoverBackground); }
                 button.secondary { background: var(--vscode-button-secondaryBackground); color: var(--vscode-button-secondaryForeground); }
@@ -171,6 +155,7 @@ class PromptBuilderViewProvider implements vscode.WebviewViewProvider {
                 .file-item { 
                     display: flex; justify-content: space-between; align-items: center;
                     background: var(--vscode-list-hoverBackground); padding: 6px; border-radius: 4px; margin-bottom: 5px; font-size: 0.9em;
+                    cursor: pointer;
                 }
                 .file-item.expanded {
                     flex-direction: column;
@@ -254,14 +239,12 @@ class PromptBuilderViewProvider implements vscode.WebviewViewProvider {
                 <textarea id="customIgnore" class="ignore" placeholder="node_modules&#10;dist&#10;*.log&#10;.env"></textarea>
             </div>
             
-            <button id="copyBtn">📋 В буфер обмена<span id="charCountBadge" class="char-count-badge">0</span></button>
+            <button id="copyBtn">📋 В буфер обмена (<span id="charCountBadge">0</span> симв.)</button>
 
             <script>
                 const vscode = acquireVsCodeApi();
                 let files = [];
-                let currentCharCount = 0;
 
-                // Инициализируем поля сохранёнными промптами сразу при загрузке
                 document.getElementById('systemPrompt').value = ${safeSystemPrompt};
                 document.getElementById('projectPrompt').value = ${safeProjectPrompt};
 
@@ -324,9 +307,9 @@ class PromptBuilderViewProvider implements vscode.WebviewViewProvider {
                     const message = event.data;
                     if (message.type === 'updateFiles') {
                         files = message.files;
-                        currentCharCount = message.charCount || 0;
+                        const charCount = message.charCount || 0;
+                        document.getElementById('charCountBadge').textContent = charCount.toLocaleString();
                         renderFiles();
-                        document.getElementById('charCountBadge').textContent = currentCharCount.toLocaleString();
                     }
                 });
 
@@ -338,22 +321,24 @@ class PromptBuilderViewProvider implements vscode.WebviewViewProvider {
                     } else {
                         fileDiv.classList.add('expanded');
                         const symbolsContainer = fileDiv.querySelector('.symbols-container');
-                        renderSymbols(symbolsContainer, file.symbols, file.uri);
+                        renderSymbols(symbolsContainer, file.symbols, file.uri, file.states);
                     }
                 }
 
-                function renderSymbols(container, symbols, fileUri, depth = 0) {
+                function renderSymbols(container, symbols, fileUri, states, depth = 0) {
                     container.innerHTML = '';
                     const list = document.createElement('div');
                     list.style.paddingLeft = (depth * 15) + 'px';
                     symbols.forEach(symbol => {
                         const symbolDiv = document.createElement('div');
                         symbolDiv.className = 'symbol-item';
+                        // Останавливаем всплытие события клика, чтобы не срабатывал toggleFile
+                        symbolDiv.onclick = (e) => e.stopPropagation(); 
                         
                         const checkbox = document.createElement('input');
                         checkbox.type = 'checkbox';
                         checkbox.id = 'sym-' + symbol.id;
-                        checkbox.checked = symbol.enabled;
+                        checkbox.checked = states[symbol.id] !== false;
                         checkbox.onchange = () => {
                             vscode.postMessage({ 
                                 type: 'toggleSymbol', 
@@ -364,7 +349,8 @@ class PromptBuilderViewProvider implements vscode.WebviewViewProvider {
                         
                         const label = document.createElement('label');
                         label.htmlFor = 'sym-' + symbol.id;
-                        label.textContent = symbol.name + (symbol.detail ? ' : ' + symbol.detail : '');
+                        const kindLabel = symbol.kindName ? \`[\${symbol.kindName}] \` : '';
+                        label.textContent = kindLabel + symbol.name + (symbol.detail ? ' : ' + symbol.detail : '');
                         
                         symbolDiv.appendChild(checkbox);
                         symbolDiv.appendChild(label);
@@ -372,7 +358,7 @@ class PromptBuilderViewProvider implements vscode.WebviewViewProvider {
                         
                         if (symbol.children && symbol.children.length > 0) {
                             const childContainer = document.createElement('div');
-                            renderSymbols(childContainer, symbol.children, fileUri, depth + 1);
+                            renderSymbols(childContainer, symbol.children, fileUri, states, depth + 1);
                             list.appendChild(childContainer);
                         }
                     });
@@ -393,7 +379,8 @@ class PromptBuilderViewProvider implements vscode.WebviewViewProvider {
                         const removeBtn = document.createElement('button');
                         removeBtn.className = 'remove-btn';
                         removeBtn.innerText = '✕';
-                        removeBtn.onclick = () => {
+                        removeBtn.onclick = (e) => {
+                            e.stopPropagation();
                             vscode.postMessage({ type: 'removeFile', uri: file.uri });
                         };
                         
