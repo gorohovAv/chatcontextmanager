@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import { SystemPromptManager } from './sysPrompt';
 import { TreeManager, TreeOptions } from './tree';
+import { PayloadManager } from './payload';
 
 export function activate(context: vscode.ExtensionContext) {
     console.log('🚀 [МОЕ РАСШИРЕНИЕ] Функция activate() вызвана!');
@@ -19,13 +20,14 @@ export function activate(context: vscode.ExtensionContext) {
 class PromptBuilderViewProvider implements vscode.WebviewViewProvider {
     public static readonly viewType = 'promptBuilderView';
     private _view?: vscode.WebviewView;
-    private selectedFiles: { name: string, uri: string }[] = [];
     private sysPromptManager: SystemPromptManager;
     private treeManager: TreeManager;
+    private payloadManager: PayloadManager;
 
     constructor(private readonly context: vscode.ExtensionContext) {
         this.sysPromptManager = new SystemPromptManager(context);
         this.treeManager = new TreeManager(context);
+        this.payloadManager = new PayloadManager();
     }
 
     public resolveWebviewView(
@@ -56,23 +58,32 @@ class PromptBuilderViewProvider implements vscode.WebviewViewProvider {
                         canSelectFolders: false
                     });
                     if (uris) {
-                        this.selectedFiles = uris.map(uri => ({
-                            name: uri.fsPath.split(/[/\\]/).pop() || uri.fsPath,
-                            uri: uri.toString()
-                        }));
+                        await this.payloadManager.addFiles(uris);
                         this._updateFileList();
                     }
                     break;
                 case 'removeFile':
-                    this.selectedFiles = this.selectedFiles.filter(f => f.uri !== data.uri);
+                    await this.payloadManager.removeFile(vscode.Uri.parse(data.uri));
+                    this._updateFileList();
+                    break;
+                case 'toggleSymbol':
+                    await this.payloadManager.toggleSymbol(vscode.Uri.parse(data.uri), data.symbolId);
                     this._updateFileList();
                     break;
                 case 'compileAndCopy':
-                    await this._compileAndCopy(data.text, {
-                        includeTree: data.includeTree,
-                        useGitignore: data.useGitignore,
-                        customIgnore: data.customIgnore
-                    });
+                    const finalPrompt = await this.payloadManager.compileFullPrompt(
+                        this.sysPromptManager.getSystemPrompt(),
+                        this.sysPromptManager.getProjectPrompt(),
+                        data.text,
+                        {
+                            includeTree: data.includeTree,
+                            useGitignore: data.useGitignore,
+                            customIgnore: data.customIgnore,
+                            getProjectTree: (opts) => this.treeManager.getProjectTree(opts)
+                        }
+                    );
+                    await vscode.env.clipboard.writeText(finalPrompt.trim());
+                    vscode.window.showInformationMessage('✅ Промпт успешно скопирован в буфер обмена!');
                     break;
                 case 'saveSystemPrompt':
                     await this.sysPromptManager.setSystemPrompt(data.prompt);
@@ -84,59 +95,31 @@ class PromptBuilderViewProvider implements vscode.WebviewViewProvider {
                     break;
             }
         });
+
+        // Initial update
+        this._updateFileList();
     }
 
-    private _updateFileList() {
+    private async _updateFileList() {
         if (this._view) {
-            this._view.webview.postMessage({ type: 'updateFiles', files: this.selectedFiles });
+            const filesInfo = await this.payloadManager.getFilesInfo();
+            const charCount = await this.payloadManager.getCompiledPromptLength(
+                this.sysPromptManager.getSystemPrompt(),
+                this.sysPromptManager.getProjectPrompt(),
+                '',
+                {
+                    includeTree: false,
+                    useGitignore: false,
+                    customIgnore: '',
+                    getProjectTree: async () => ''
+                }
+            );
+            this._view.webview.postMessage({ 
+                type: 'updateFiles', 
+                files: filesInfo,
+                charCount: charCount
+            });
         }
-    }
-
-    private async _compileAndCopy(userText: string, options: {
-        includeTree?: boolean;
-        useGitignore?: boolean;
-        customIgnore?: string;
-    }) {
-        let finalPrompt = '';
-        
-        const systemPrompt = this.sysPromptManager.getSystemPrompt();
-        if (systemPrompt.trim()) {
-            finalPrompt += `# Системный промпт\n${systemPrompt.trim()}\n\n`;
-        }
-
-        const projectPrompt = this.sysPromptManager.getProjectPrompt();
-        if (projectPrompt.trim()) {
-            finalPrompt += `# Промпт проекта\n${projectPrompt.trim()}\n\n`;
-        }
-
-        if (options.includeTree) {
-            const treeOptions: TreeOptions = {
-                useGitignore: options.useGitignore,
-                customIgnore: options.customIgnore
-            };
-            const tree = await this.treeManager.getProjectTree(treeOptions);
-            if (tree.trim()) {
-                finalPrompt += `# Структура проекта\n\`\`\`\n${tree}\`\`\`\n\n`;
-            }
-        }
-
-        if (userText.trim()) {
-            finalPrompt += `# Задача\n${userText.trim()}\n\n`;
-        }
-        
-        for (const file of this.selectedFiles) {
-            try {
-                const uri = vscode.Uri.parse(file.uri);
-                const uint8Array = await vscode.workspace.fs.readFile(uri);
-                const content = new TextDecoder().decode(uint8Array);
-                finalPrompt += `--- Файл: ${file.name} ---\n\`\`\`\n${content}\n\`\`\`\n\n`;
-            } catch (e) {
-                finalPrompt += `--- Файл: ${file.name} ---\n[Ошибка чтения файла: ${e}]\n\n`;
-            }
-        }
-
-        await vscode.env.clipboard.writeText(finalPrompt.trim());
-        vscode.window.showInformationMessage('✅ Промпт успешно скопирован в буфер обмена!');
     }
 
     private _getHtmlForWebview(
@@ -168,6 +151,19 @@ class PromptBuilderViewProvider implements vscode.WebviewViewProvider {
                     width: 100%; padding: 8px; margin-bottom: 10px; cursor: pointer;
                     background: var(--vscode-button-background); color: var(--vscode-button-foreground);
                     border: none; border-radius: 4px; font-weight: bold;
+                    position: relative;
+                }
+                .char-count-badge {
+                    position: absolute;
+                    top: -8px;
+                    right: 8px;
+                    background: var(--vscode-badge-background);
+                    color: var(--vscode-badge-foreground);
+                    border-radius: 10px;
+                    padding: 0 6px;
+                    font-size: 0.75em;
+                    min-width: 30px;
+                    text-align: center;
                 }
                 button:hover { background: var(--vscode-button-hoverBackground); }
                 button.secondary { background: var(--vscode-button-secondaryBackground); color: var(--vscode-button-secondaryForeground); }
@@ -175,6 +171,26 @@ class PromptBuilderViewProvider implements vscode.WebviewViewProvider {
                 .file-item { 
                     display: flex; justify-content: space-between; align-items: center;
                     background: var(--vscode-list-hoverBackground); padding: 6px; border-radius: 4px; margin-bottom: 5px; font-size: 0.9em;
+                }
+                .file-item.expanded {
+                    flex-direction: column;
+                    align-items: stretch;
+                }
+                .file-header {
+                    display: flex;
+                    justify-content: space-between;
+                    width: 100%;
+                    margin-bottom: 5px;
+                }
+                .symbol-item {
+                    display: flex;
+                    align-items: center;
+                    margin-left: 20px;
+                    padding: 4px 0;
+                    font-size: 0.85em;
+                }
+                .symbol-item input[type="checkbox"] {
+                    margin-right: 8px;
                 }
                 .remove-btn { background: transparent; color: var(--vscode-errorForeground); width: auto; padding: 2px 6px; margin: 0; }
                 .remove-btn:hover { background: var(--vscode-list-activeSelectionBackground); }
@@ -238,11 +254,12 @@ class PromptBuilderViewProvider implements vscode.WebviewViewProvider {
                 <textarea id="customIgnore" class="ignore" placeholder="node_modules&#10;dist&#10;*.log&#10;.env"></textarea>
             </div>
             
-            <button id="copyBtn">📋 В буфер обмена</button>
+            <button id="copyBtn">📋 В буфер обмена<span id="charCountBadge" class="char-count-badge">0</span></button>
 
             <script>
                 const vscode = acquireVsCodeApi();
                 let files = [];
+                let currentCharCount = 0;
 
                 // Инициализируем поля сохранёнными промптами сразу при загрузке
                 document.getElementById('systemPrompt').value = ${safeSystemPrompt};
@@ -307,9 +324,60 @@ class PromptBuilderViewProvider implements vscode.WebviewViewProvider {
                     const message = event.data;
                     if (message.type === 'updateFiles') {
                         files = message.files;
+                        currentCharCount = message.charCount || 0;
                         renderFiles();
+                        document.getElementById('charCountBadge').textContent = currentCharCount.toLocaleString();
                     }
                 });
+
+                function toggleFile(fileDiv, file) {
+                    const isExpanded = fileDiv.classList.contains('expanded');
+                    if (isExpanded) {
+                        fileDiv.classList.remove('expanded');
+                        fileDiv.querySelector('.symbols-container').innerHTML = '';
+                    } else {
+                        fileDiv.classList.add('expanded');
+                        const symbolsContainer = fileDiv.querySelector('.symbols-container');
+                        renderSymbols(symbolsContainer, file.symbols, file.uri);
+                    }
+                }
+
+                function renderSymbols(container, symbols, fileUri, depth = 0) {
+                    container.innerHTML = '';
+                    const list = document.createElement('div');
+                    list.style.paddingLeft = (depth * 15) + 'px';
+                    symbols.forEach(symbol => {
+                        const symbolDiv = document.createElement('div');
+                        symbolDiv.className = 'symbol-item';
+                        
+                        const checkbox = document.createElement('input');
+                        checkbox.type = 'checkbox';
+                        checkbox.id = 'sym-' + symbol.id;
+                        checkbox.checked = symbol.enabled;
+                        checkbox.onchange = () => {
+                            vscode.postMessage({ 
+                                type: 'toggleSymbol', 
+                                uri: fileUri, 
+                                symbolId: symbol.id 
+                            });
+                        };
+                        
+                        const label = document.createElement('label');
+                        label.htmlFor = 'sym-' + symbol.id;
+                        label.textContent = symbol.name + (symbol.detail ? ' : ' + symbol.detail : '');
+                        
+                        symbolDiv.appendChild(checkbox);
+                        symbolDiv.appendChild(label);
+                        list.appendChild(symbolDiv);
+                        
+                        if (symbol.children && symbol.children.length > 0) {
+                            const childContainer = document.createElement('div');
+                            renderSymbols(childContainer, symbol.children, fileUri, depth + 1);
+                            list.appendChild(childContainer);
+                        }
+                    });
+                    container.appendChild(list);
+                }
 
                 function renderFiles() {
                     const list = document.getElementById('fileList');
@@ -317,7 +385,10 @@ class PromptBuilderViewProvider implements vscode.WebviewViewProvider {
                     files.forEach(file => {
                         const div = document.createElement('div');
                         div.className = 'file-item';
-                        div.innerHTML = \`<span>📄 \${file.name}</span>\`;
+                        
+                        const header = document.createElement('div');
+                        header.className = 'file-header';
+                        header.innerHTML = \`<span>📄 \${file.name}</span>\`;
                         
                         const removeBtn = document.createElement('button');
                         removeBtn.className = 'remove-btn';
@@ -326,7 +397,19 @@ class PromptBuilderViewProvider implements vscode.WebviewViewProvider {
                             vscode.postMessage({ type: 'removeFile', uri: file.uri });
                         };
                         
-                        div.appendChild(removeBtn);
+                        header.appendChild(removeBtn);
+                        div.appendChild(header);
+                        
+                        const symbolsContainer = document.createElement('div');
+                        symbolsContainer.className = 'symbols-container';
+                        div.appendChild(symbolsContainer);
+                        
+                        div.onclick = (e) => {
+                            if (!e.target.closest('.remove-btn') && !e.target.closest('input[type="checkbox"]')) {
+                                toggleFile(div, file);
+                            }
+                        };
+                        
                         list.appendChild(div);
                     });
                 }
