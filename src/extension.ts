@@ -92,6 +92,20 @@ class PromptBuilderViewProvider implements vscode.WebviewViewProvider {
                     await this.sysPromptManager.setProjectPrompt(data.prompt);
                     vscode.window.showInformationMessage('✅ Промпт проекта сохранен!');
                     break;
+                case 'requestCharCount':
+                    const length = await this.payloadManager.getCompiledPromptLength(
+                        this.sysPromptManager.getSystemPrompt(),
+                        this.sysPromptManager.getProjectPrompt(),
+                        data.userText || '',
+                        {
+                            includeTree: !!data.includeTree,
+                            useGitignore: !!data.useGitignore,
+                            customIgnore: data.customIgnore || '',
+                            getProjectTree: (opts) => this.treeManager.getProjectTree(opts)
+                        }
+                    );
+                    this._view?.webview.postMessage({ type: 'updateCharCount', charCount: length });
+                    break;
             }
         });
 
@@ -101,21 +115,9 @@ class PromptBuilderViewProvider implements vscode.WebviewViewProvider {
     private async _updateFileList() {
         if (this._view) {
             const filesInfo = await this.payloadManager.getFilesInfo();
-            const charCount = await this.payloadManager.getCompiledPromptLength(
-                this.sysPromptManager.getSystemPrompt(),
-                this.sysPromptManager.getProjectPrompt(),
-                '', 
-                {
-                    includeTree: false,
-                    useGitignore: false,
-                    customIgnore: '',
-                    getProjectTree: async () => ''
-                }
-            );
             this._view.webview.postMessage({ 
                 type: 'updateFiles', 
-                files: filesInfo,
-                charCount: charCount
+                files: filesInfo
             });
         }
     }
@@ -176,7 +178,95 @@ class PromptBuilderViewProvider implements vscode.WebviewViewProvider {
                 }
                 .symbol-item input[type="checkbox"] {
                     margin-right: 8px;
+                    flex-shrink: 0;
                 }
+                .symbol-item label {
+                    display: flex;
+                    align-items: center;
+                    cursor: pointer;
+                    flex: 1;
+                    min-width: 0;
+                }
+                .symbol-item .sym-name {
+                    overflow: hidden;
+                    text-overflow: ellipsis;
+                    white-space: nowrap;
+                }
+                .symbol-item .sym-detail {
+                    color: var(--vscode-descriptionForeground);
+                    margin-left: 4px;
+                    font-style: italic;
+                }
+
+                /* Бейджи типов символов */
+                .sym-badge {
+                    display: inline-flex;
+                    align-items: center;
+                    justify-content: center;
+                    width: 18px;
+                    height: 18px;
+                    border-radius: 3px;
+                    font-size: 10px;
+                    font-weight: bold;
+                    margin-right: 6px;
+                    font-family: var(--vscode-editor-font-family, monospace);
+                    flex-shrink: 0;
+                    line-height: 1;
+                    box-sizing: border-box;
+                }
+                /* Классы / интерфейсы / структуры / конструкторы — бирюзовый */
+                .sym-kind-class,
+                .sym-kind-interface,
+                .sym-kind-struct,
+                .sym-kind-constructor,
+                .sym-kind-type-parameter {
+                    background: rgba(78, 201, 176, 0.15);
+                    color: #4ec9b0;
+                    border: 1px solid rgba(78, 201, 176, 0.6);
+                }
+                /* Методы / функции — жёлтый */
+                .sym-kind-method,
+                .sym-kind-function {
+                    background: rgba(220, 220, 170, 0.15);
+                    color: #dcdcaa;
+                    border: 1px solid rgba(220, 220, 170, 0.6);
+                }
+                /* Свойства / поля — голубой */
+                .sym-kind-property,
+                .sym-kind-field {
+                    background: rgba(156, 220, 254, 0.15);
+                    color: #9cdcfe;
+                    border: 1px solid rgba(156, 220, 254, 0.6);
+                }
+                /* Перечисления / элементы enum / события — оранжевый */
+                .sym-kind-enum,
+                .sym-kind-enum-member,
+                .sym-kind-event {
+                    background: rgba(206, 145, 120, 0.15);
+                    color: #ce9178;
+                    border: 1px solid rgba(206, 145, 120, 0.6);
+                }
+                /* Модули / namespace / пакеты — фиолетовый */
+                .sym-kind-module,
+                .sym-kind-namespace,
+                .sym-kind-package {
+                    background: rgba(197, 134, 192, 0.15);
+                    color: #c586c0;
+                    border: 1px solid rgba(197, 134, 192, 0.6);
+                }
+                /* Константы — светло-голубой */
+                .sym-kind-constant {
+                    background: rgba(79, 193, 255, 0.15);
+                    color: #4fc1ff;
+                    border: 1px solid rgba(79, 193, 255, 0.6);
+                }
+                /* Файл — серый */
+                .sym-kind-file {
+                    background: rgba(200, 200, 200, 0.15);
+                    color: #c8c8c8;
+                    border: 1px solid rgba(200, 200, 200, 0.6);
+                }
+
                 .remove-btn { background: transparent; color: var(--vscode-errorForeground); width: auto; padding: 2px 6px; margin: 0; }
                 .remove-btn:hover { background: var(--vscode-list-activeSelectionBackground); }
                 #fileList { margin-bottom: 15px; max-height: 200px; overflow-y: auto; }
@@ -252,6 +342,7 @@ class PromptBuilderViewProvider implements vscode.WebviewViewProvider {
                 const useGitignoreEl = document.getElementById('useGitignore');
                 const customIgnoreEl = document.getElementById('customIgnore');
                 const treeSettingsEl = document.getElementById('treeSettings');
+                const charCountBadge = document.getElementById('charCountBadge');
 
                 function updateTreeSettingsVisibility() {
                     if (includeTreeEl.checked) {
@@ -271,9 +362,36 @@ class PromptBuilderViewProvider implements vscode.WebviewViewProvider {
                     }
                 }
 
-                includeTreeEl.addEventListener('change', updateTreeSettingsVisibility);
-                useGitignoreEl.addEventListener('change', updateCustomIgnoreState);
+                includeTreeEl.addEventListener('change', () => {
+                    updateTreeSettingsVisibility();
+                    requestCharCount();
+                });
+                useGitignoreEl.addEventListener('change', () => {
+                    updateCustomIgnoreState();
+                    requestCharCount();
+                });
                 updateCustomIgnoreState();
+
+                // Debounce для текстовых полей, чтобы не дёргать пересчёт на каждой клавише
+                let charCountTimer = null;
+                function requestCharCountDebounced() {
+                    if (charCountTimer) clearTimeout(charCountTimer);
+                    charCountTimer = setTimeout(requestCharCount, 250);
+                }
+
+                function requestCharCount() {
+                    vscode.postMessage({
+                        type: 'requestCharCount',
+                        userText: document.getElementById('userText').value,
+                        includeTree: includeTreeEl.checked,
+                        useGitignore: useGitignoreEl.checked,
+                        customIgnore: customIgnoreEl.value
+                    });
+                }
+
+                // Слушатели изменений для обновления счётчика
+                document.getElementById('userText').addEventListener('input', requestCharCountDebounced);
+                customIgnoreEl.addEventListener('input', requestCharCountDebounced);
 
                 document.getElementById('addFileBtn').addEventListener('click', () => {
                     vscode.postMessage({ type: 'addFile' });
@@ -296,20 +414,25 @@ class PromptBuilderViewProvider implements vscode.WebviewViewProvider {
                 document.getElementById('saveSystemPromptBtn').addEventListener('click', () => {
                     const prompt = document.getElementById('systemPrompt').value;
                     vscode.postMessage({ type: 'saveSystemPrompt', prompt: prompt });
+                    // После сохранения промпт в extension изменился — пересчитаем счётчик
+                    requestCharCount();
                 });
 
                 document.getElementById('saveProjectPromptBtn').addEventListener('click', () => {
                     const prompt = document.getElementById('projectPrompt').value;
                     vscode.postMessage({ type: 'saveProjectPrompt', prompt: prompt });
+                    requestCharCount();
                 });
 
                 window.addEventListener('message', event => {
                     const message = event.data;
                     if (message.type === 'updateFiles') {
                         files = message.files;
-                        const charCount = message.charCount || 0;
-                        document.getElementById('charCountBadge').textContent = charCount.toLocaleString();
                         renderFiles();
+                        // После изменения списка файлов пересчитываем длину промпта
+                        requestCharCount();
+                    } else if (message.type === 'updateCharCount') {
+                        charCountBadge.textContent = (message.charCount || 0).toLocaleString();
                     }
                 });
 
@@ -325,6 +448,62 @@ class PromptBuilderViewProvider implements vscode.WebviewViewProvider {
                     }
                 }
 
+                // --- Вспомогательные функции для визуального оформления типов символов ---
+
+                function getSymbolLetter(kindName) {
+                    const map = {
+                        'Класс': 'C',
+                        'Интерфейс': 'I',
+                        'Метод': 'M',
+                        'Функция': 'F',
+                        'Свойство': 'P',
+                        'Поле': 'F',
+                        'Конструктор': 'C',
+                        'Перечисление': 'E',
+                        'Элемент перечисления': 'e',
+                        'Модуль': 'M',
+                        'Пространство имен': 'N',
+                        'Пакет': 'P',
+                        'Константа': 'K',
+                        'Структура': 'S',
+                        'Событие': 'E',
+                        'Параметр типа': 'T',
+                        'Файл': 'F',
+                        'Оператор': 'O'
+                    };
+                    return map[kindName] || '?';
+                }
+
+                function getSymbolKindClass(kindName) {
+                    const map = {
+                        'Класс': 'class',
+                        'Интерфейс': 'interface',
+                        'Метод': 'method',
+                        'Функция': 'function',
+                        'Свойство': 'property',
+                        'Поле': 'field',
+                        'Конструктор': 'constructor',
+                        'Перечисление': 'enum',
+                        'Элемент перечисления': 'enum-member',
+                        'Модуль': 'module',
+                        'Пространство имен': 'namespace',
+                        'Пакет': 'package',
+                        'Константа': 'constant',
+                        'Структура': 'struct',
+                        'Событие': 'event',
+                        'Параметр типа': 'type-parameter',
+                        'Файл': 'file',
+                        'Оператор': 'operator'
+                    };
+                    return map[kindName] || 'unknown';
+                }
+
+                function escapeHtml(text) {
+                    const div = document.createElement('div');
+                    div.textContent = text;
+                    return div.innerHTML;
+                }
+
                 function renderSymbols(container, symbols, fileUri, states, depth = 0) {
                     container.innerHTML = '';
                     const list = document.createElement('div');
@@ -332,8 +511,6 @@ class PromptBuilderViewProvider implements vscode.WebviewViewProvider {
                     symbols.forEach(symbol => {
                         const symbolDiv = document.createElement('div');
                         symbolDiv.className = 'symbol-item';
-                        // Останавливаем всплытие события клика, чтобы не срабатывал toggleFile
-                        symbolDiv.onclick = (e) => e.stopPropagation(); 
                         
                         const checkbox = document.createElement('input');
                         checkbox.type = 'checkbox';
@@ -349,8 +526,14 @@ class PromptBuilderViewProvider implements vscode.WebviewViewProvider {
                         
                         const label = document.createElement('label');
                         label.htmlFor = 'sym-' + symbol.id;
-                        const kindLabel = symbol.kindName ? \`[\${symbol.kindName}] \` : '';
-                        label.textContent = kindLabel + symbol.name + (symbol.detail ? ' : ' + symbol.detail : '');
+
+                        const letter = getSymbolLetter(symbol.kindName);
+                        const kindClass = getSymbolKindClass(symbol.kindName);
+                        const badge = '<span class="sym-badge sym-kind-' + kindClass + '">' + letter + '</span>';
+
+                        label.innerHTML = badge
+                            + '<span class="sym-name">' + escapeHtml(symbol.name) + '</span>'
+                            + (symbol.detail ? '<span class="sym-detail">: ' + escapeHtml(symbol.detail) + '</span>' : '');
                         
                         symbolDiv.appendChild(checkbox);
                         symbolDiv.appendChild(label);
@@ -374,7 +557,7 @@ class PromptBuilderViewProvider implements vscode.WebviewViewProvider {
                         
                         const header = document.createElement('div');
                         header.className = 'file-header';
-                        header.innerHTML = \`<span>📄 \${file.name}</span>\`;
+                        header.innerHTML = '<span>📄 ' + escapeHtml(file.name) + '</span>';
                         
                         const removeBtn = document.createElement('button');
                         removeBtn.className = 'remove-btn';
@@ -391,8 +574,10 @@ class PromptBuilderViewProvider implements vscode.WebviewViewProvider {
                         symbolsContainer.className = 'symbols-container';
                         div.appendChild(symbolsContainer);
                         
+                        // Сворачиваем/разворачиваем ТОЛЬКО при клике вне области чекбоксов.
+                        // Это решает проблему сворачивания при клике по чекбоксу/label.
                         div.onclick = (e) => {
-                            if (!e.target.closest('.remove-btn') && !e.target.closest('input[type="checkbox"]')) {
+                            if (!e.target.closest('.remove-btn') && !e.target.closest('.symbols-container')) {
                                 toggleFile(div, file);
                             }
                         };
@@ -400,6 +585,9 @@ class PromptBuilderViewProvider implements vscode.WebviewViewProvider {
                         list.appendChild(div);
                     });
                 }
+
+                // Первичный запрос счётчика после загрузки webview
+                requestCharCount();
             </script>
         </body>
         </html>`;

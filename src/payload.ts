@@ -87,6 +87,16 @@ function convertSymbolInformation(symbol: vscode.SymbolInformation): SymbolNode 
     };
 }
 
+/** Рекурсивно удаляет переменные (SymbolKind.Variable) из дерева символов */
+function filterSymbols(symbols: SymbolNode[]): SymbolNode[] {
+    return symbols
+        .filter(s => s.kind !== vscode.SymbolKind.Variable)
+        .map(s => ({
+            ...s,
+            children: filterSymbols(s.children)
+        }));
+}
+
 export class PayloadManager {
     private selectedFiles: Map<string, vscode.Uri> = new Map();
     private symbolTree: Map<string, SymbolNode[]> = new Map();
@@ -211,6 +221,9 @@ export class PayloadManager {
                     }
                 }
             }
+
+            // Фильтруем переменные из дерева
+            convertedSymbols = filterSymbols(convertedSymbols);
 
             this.symbolTree.set(uriStr, convertedSymbols);
             
