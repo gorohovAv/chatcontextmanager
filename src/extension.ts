@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import { SystemPromptManager } from './sysPrompt';
 import { TreeManager, TreeOptions } from './tree';
-import { PayloadManager } from './payload';
+import { PayloadManager, FileInfo } from './payload';
 
 export function activate(context: vscode.ExtensionContext) {
     console.log('🚀 [МОЕ РАСШИРЕНИЕ] Функция activate() вызвана!');
@@ -10,7 +10,12 @@ export function activate(context: vscode.ExtensionContext) {
     
     const disposable = vscode.window.registerWebviewViewProvider(
         PromptBuilderViewProvider.viewType, 
-        provider
+        provider,
+        {
+            webviewOptions: {
+                retainContextWhenHidden: true
+            }
+        }
     );
     
     context.subscriptions.push(disposable);
@@ -27,10 +32,10 @@ class PromptBuilderViewProvider implements vscode.WebviewViewProvider {
     constructor(private readonly context: vscode.ExtensionContext) {
         this.sysPromptManager = new SystemPromptManager(context);
         this.treeManager = new TreeManager(context);
-        this.payloadManager = new PayloadManager();
+        this.payloadManager = new PayloadManager(context);
     }
 
-    public resolveWebviewView(
+    public async resolveWebviewView(
         webviewView: vscode.WebviewView,
         context: vscode.WebviewViewResolveContext,
         _token: vscode.CancellationToken,
@@ -38,14 +43,28 @@ class PromptBuilderViewProvider implements vscode.WebviewViewProvider {
         this._view = webviewView;
         webviewView.webview.options = { enableScripts: true };
 
+        // Восстанавливаем персистентное состояние
+        await this.payloadManager.loadState();
+        const savedUserText = await this.payloadManager.getUserText();
+        const filesInfo = await this.payloadManager.getFilesInfo();
+
         const systemPrompt = this.sysPromptManager.getSystemPrompt();
         const projectPrompt = this.sysPromptManager.getProjectPrompt();
 
         webviewView.webview.html = this._getHtmlForWebview(
             webviewView.webview,
             systemPrompt,
-            projectPrompt
+            projectPrompt,
+            savedUserText,
+            filesInfo
         );
+
+        // Принудительное сохранение при уничтожении webview (закрытие вкладки/VS Code)
+        webviewView.onDidDispose(() => {
+            this.payloadManager.flushSave().catch(e => 
+                console.error('[PromptBuilder] Ошибка сохранения при закрытии:', e)
+            );
+        });
 
         webviewView.webview.onDidReceiveMessage(async (data) => {
             switch (data.type) {
@@ -92,6 +111,9 @@ class PromptBuilderViewProvider implements vscode.WebviewViewProvider {
                     await this.sysPromptManager.setProjectPrompt(data.prompt);
                     vscode.window.showInformationMessage('✅ Промпт проекта сохранен!');
                     break;
+                case 'saveUserText':
+                    await this.payloadManager.saveUserText(data.text);
+                    break;
                 case 'requestCharCount':
                     const length = await this.payloadManager.getCompiledPromptLength(
                         this.sysPromptManager.getSystemPrompt(),
@@ -125,10 +147,14 @@ class PromptBuilderViewProvider implements vscode.WebviewViewProvider {
     private _getHtmlForWebview(
         webview: vscode.Webview,
         systemPrompt: string,
-        projectPrompt: string
+        projectPrompt: string,
+        userText: string,
+        filesInfo: FileInfo[]
     ) {
         const safeSystemPrompt = JSON.stringify(systemPrompt);
         const safeProjectPrompt = JSON.stringify(projectPrompt);
+        const safeUserText = JSON.stringify(userText);
+        const safeFilesInfo = JSON.stringify(filesInfo);
 
         return `<!DOCTYPE html>
         <html lang="ru">
@@ -333,11 +359,15 @@ class PromptBuilderViewProvider implements vscode.WebviewViewProvider {
 
             <script>
                 const vscode = acquireVsCodeApi();
-                let files = [];
+                
+                // Начальное состояние из extension (восстановлено из workspaceState)
+                const initialFiles = ${safeFilesInfo};
+                let files = initialFiles || [];
                 const expandedFiles = new Set();
 
                 document.getElementById('systemPrompt').value = ${safeSystemPrompt};
                 document.getElementById('projectPrompt').value = ${safeProjectPrompt};
+                document.getElementById('userText').value = ${safeUserText};
 
                 const includeTreeEl = document.getElementById('includeTree');
                 const useGitignoreEl = document.getElementById('useGitignore');
@@ -373,7 +403,7 @@ class PromptBuilderViewProvider implements vscode.WebviewViewProvider {
                 });
                 updateCustomIgnoreState();
 
-                // Debounce для текстовых полей, чтобы не дёргать пересчёт на каждой клавише
+                // Debounce для текстовых полей
                 let charCountTimer = null;
                 function requestCharCountDebounced() {
                     if (charCountTimer) clearTimeout(charCountTimer);
@@ -390,8 +420,14 @@ class PromptBuilderViewProvider implements vscode.WebviewViewProvider {
                     });
                 }
 
-                // Слушатели изменений для обновления счётчика
-                document.getElementById('userText').addEventListener('input', requestCharCountDebounced);
+                // Слушатели изменений для обновления счётчика и сохранения userText
+                document.getElementById('userText').addEventListener('input', () => {
+                    requestCharCountDebounced();
+                    vscode.postMessage({ 
+                        type: 'saveUserText', 
+                        text: document.getElementById('userText').value 
+                    });
+                });
                 customIgnoreEl.addEventListener('input', requestCharCountDebounced);
 
                 document.getElementById('addFileBtn').addEventListener('click', () => {
@@ -415,7 +451,6 @@ class PromptBuilderViewProvider implements vscode.WebviewViewProvider {
                 document.getElementById('saveSystemPromptBtn').addEventListener('click', () => {
                     const prompt = document.getElementById('systemPrompt').value;
                     vscode.postMessage({ type: 'saveSystemPrompt', prompt: prompt });
-                    // После сохранения промпт в extension изменился — пересчитаем счётчик
                     requestCharCount();
                 });
 
@@ -430,7 +465,6 @@ class PromptBuilderViewProvider implements vscode.WebviewViewProvider {
                     if (message.type === 'updateFiles') {
                         files = message.files;
                         renderFiles();
-                        // После изменения списка файлов пересчитываем длину промпта
                         requestCharCount();
                     } else if (message.type === 'updateCharCount') {
                         charCountBadge.textContent = (message.charCount || 0).toLocaleString();
@@ -451,52 +485,26 @@ class PromptBuilderViewProvider implements vscode.WebviewViewProvider {
                     }
                 }
 
-                // --- Вспомогательные функции для визуального оформления типов символов ---
-
                 function getSymbolLetter(kindName) {
                     const map = {
-                        'Класс': 'C',
-                        'Интерфейс': 'I',
-                        'Метод': 'M',
-                        'Функция': 'F',
-                        'Свойство': 'P',
-                        'Поле': 'F',
-                        'Конструктор': 'C',
-                        'Перечисление': 'E',
-                        'Элемент перечисления': 'e',
-                        'Модуль': 'M',
-                        'Пространство имен': 'N',
-                        'Пакет': 'P',
-                        'Константа': 'K',
-                        'Структура': 'S',
-                        'Событие': 'E',
-                        'Параметр типа': 'T',
-                        'Файл': 'F',
-                        'Оператор': 'O'
+                        'Класс': 'C', 'Интерфейс': 'I', 'Метод': 'M', 'Функция': 'F',
+                        'Свойство': 'P', 'Поле': 'F', 'Конструктор': 'C', 'Перечисление': 'E',
+                        'Элемент перечисления': 'e', 'Модуль': 'M', 'Пространство имен': 'N',
+                        'Пакет': 'P', 'Константа': 'K', 'Структура': 'S', 'Событие': 'E',
+                        'Параметр типа': 'T', 'Файл': 'F', 'Оператор': 'O'
                     };
                     return map[kindName] || '?';
                 }
 
                 function getSymbolKindClass(kindName) {
                     const map = {
-                        'Класс': 'class',
-                        'Интерфейс': 'interface',
-                        'Метод': 'method',
-                        'Функция': 'function',
-                        'Свойство': 'property',
-                        'Поле': 'field',
-                        'Конструктор': 'constructor',
-                        'Перечисление': 'enum',
-                        'Элемент перечисления': 'enum-member',
-                        'Модуль': 'module',
-                        'Пространство имен': 'namespace',
-                        'Пакет': 'package',
-                        'Константа': 'constant',
-                        'Структура': 'struct',
-                        'Событие': 'event',
-                        'Параметр типа': 'type-parameter',
-                        'Файл': 'file',
-                        'Оператор': 'operator'
+                        'Класс': 'class', 'Интерфейс': 'interface', 'Метод': 'method',
+                        'Функция': 'function', 'Свойство': 'property', 'Поле': 'field',
+                        'Конструктор': 'constructor', 'Перечисление': 'enum',
+                        'Элемент перечисления': 'enum-member', 'Модуль': 'module',
+                        'Пространство имен': 'namespace', 'Пакет': 'package',
+                        'Константа': 'constant', 'Структура': 'struct', 'Событие': 'event',
+                        'Параметр типа': 'type-parameter', 'Файл': 'file', 'Оператор': 'operator'
                     };
                     return map[kindName] || 'unknown';
                 }
@@ -578,14 +586,11 @@ class PromptBuilderViewProvider implements vscode.WebviewViewProvider {
                         symbolsContainer.className = 'symbols-container';
                         div.appendChild(symbolsContainer);
                         
-                        // Восстанавливаем состояние раскрытия
                         if (expandedFiles.has(file.uri)) {
                             div.classList.add('expanded');
                             renderSymbols(symbolsContainer, file.symbols, file.uri, file.states);
                         }
                         
-                        // Сворачиваем/разворачиваем ТОЛЬКО при клике вне области чекбоксов.
-                        // Это решает проблему сворачивания при клике по чекбоксу/label.
                         div.onclick = (e) => {
                             if (!e.target.closest('.remove-btn') && !e.target.closest('.symbols-container')) {
                                 toggleFile(div, file);
@@ -596,7 +601,9 @@ class PromptBuilderViewProvider implements vscode.WebviewViewProvider {
                     });
                 }
 
-                // Первичный запрос счётчика после загрузки webview
+                // Первичный рендер файлов из начального состояния
+                renderFiles();
+                // Первичный запрос счётчика
                 requestCharCount();
             </script>
         </body>

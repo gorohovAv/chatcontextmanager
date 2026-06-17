@@ -25,6 +25,12 @@ export interface CompileOptions {
     getProjectTree: (options: { useGitignore?: boolean; customIgnore?: string }) => Promise<string>;
 }
 
+interface PersistedPayloadState {
+    userText?: string;
+    files?: string[];
+    symbolStates?: Record<string, Record<string, boolean>>;
+}
+
 function rangeToId(range: vscode.Range): string {
     return `${range.start.line}-${range.start.character}-${range.end.line}-${range.end.character}`;
 }
@@ -87,7 +93,6 @@ function convertSymbolInformation(symbol: vscode.SymbolInformation): SymbolNode 
     };
 }
 
-/** Рекурсивно удаляет переменные (SymbolKind.Variable) из дерева символов */
 function filterSymbols(symbols: SymbolNode[]): SymbolNode[] {
     return symbols
         .filter(s => s.kind !== vscode.SymbolKind.Variable)
@@ -98,9 +103,131 @@ function filterSymbols(symbols: SymbolNode[]): SymbolNode[] {
 }
 
 export class PayloadManager {
+    private static readonly PAYLOAD_KEY = 'promptBuilder.payload';
+
     private selectedFiles: Map<string, vscode.Uri> = new Map();
     private symbolTree: Map<string, SymbolNode[]> = new Map();
     private symbolStates: Map<string, Map<string, boolean>> = new Map();
+
+    private saveFilesTimeout: ReturnType<typeof setTimeout> | null = null;
+    private saveUserTextTimeout: ReturnType<typeof setTimeout> | null = null;
+
+    constructor(private context: vscode.ExtensionContext) {}
+
+    async loadState(): Promise<void> {
+        const state = this.context.workspaceState.get<PersistedPayloadState>(PayloadManager.PAYLOAD_KEY);
+        if (!state) return;
+
+        if (state.files && state.files.length > 0) {
+            for (const uriStr of state.files) {
+                try {
+                    const uri = vscode.Uri.parse(uriStr);
+                    this.selectedFiles.set(uriStr, uri);
+                    await this._loadSymbolsForFile(uri);
+                } catch (e) {
+                    console.error(`[PayloadManager] Не удалось загрузить файл ${uriStr}:`, e);
+                }
+            }
+        }
+
+        if (state.symbolStates) {
+            for (const [uriStr, savedStates] of Object.entries(state.symbolStates)) {
+                const currentStates = this.symbolStates.get(uriStr);
+                if (!currentStates) continue;
+                for (const [symbolId, enabled] of Object.entries(savedStates)) {
+                    currentStates.set(symbolId, enabled);
+                }
+            }
+        }
+    }
+
+    async getUserText(): Promise<string> {
+        const state = this.context.workspaceState.get<PersistedPayloadState>(PayloadManager.PAYLOAD_KEY);
+        return state?.userText || '';
+    }
+
+    async saveUserText(text: string): Promise<void> {
+        if (this.saveUserTextTimeout) {
+            clearTimeout(this.saveUserTextTimeout);
+        }
+
+        this.saveUserTextTimeout = setTimeout(async () => {
+            try {
+                const current = this.context.workspaceState.get<PersistedPayloadState>(PayloadManager.PAYLOAD_KEY) || {};
+                await this.context.workspaceState.update(PayloadManager.PAYLOAD_KEY, {
+                    ...current,
+                    userText: text
+                });
+            } catch (e) {
+                console.error('[PayloadManager] Ошибка сохранения userText:', e);
+            }
+        }, 400);
+    }
+
+    /**
+     * Принудительное сохранение всех данных без debounce.
+     * Вызывается при уничтожении webview (закрытие вкладки/VS Code).
+     */
+    async flushSave(): Promise<void> {
+        // Отменяем pending debounce
+        if (this.saveFilesTimeout) {
+            clearTimeout(this.saveFilesTimeout);
+            this.saveFilesTimeout = null;
+        }
+        if (this.saveUserTextTimeout) {
+            clearTimeout(this.saveUserTextTimeout);
+            this.saveUserTextTimeout = null;
+        }
+
+        // Сохраняем немедленно
+        try {
+            const files = Array.from(this.selectedFiles.keys());
+            const symbolStates: Record<string, Record<string, boolean>> = {};
+
+            for (const [uriStr, states] of this.symbolStates) {
+                const obj: Record<string, boolean> = {};
+                states.forEach((val, key) => obj[key] = val);
+                symbolStates[uriStr] = obj;
+            }
+
+            const current = this.context.workspaceState.get<PersistedPayloadState>(PayloadManager.PAYLOAD_KEY) || {};
+            await this.context.workspaceState.update(PayloadManager.PAYLOAD_KEY, {
+                ...current,
+                files,
+                symbolStates
+            });
+        } catch (e) {
+            console.error('[PayloadManager] Ошибка flushSave:', e);
+        }
+    }
+
+    private _scheduleFilesSave(): void {
+        if (this.saveFilesTimeout) {
+            clearTimeout(this.saveFilesTimeout);
+        }
+
+        this.saveFilesTimeout = setTimeout(async () => {
+            try {
+                const files = Array.from(this.selectedFiles.keys());
+                const symbolStates: Record<string, Record<string, boolean>> = {};
+
+                for (const [uriStr, states] of this.symbolStates) {
+                    const obj: Record<string, boolean> = {};
+                    states.forEach((val, key) => obj[key] = val);
+                    symbolStates[uriStr] = obj;
+                }
+
+                const current = this.context.workspaceState.get<PersistedPayloadState>(PayloadManager.PAYLOAD_KEY) || {};
+                await this.context.workspaceState.update(PayloadManager.PAYLOAD_KEY, {
+                    ...current,
+                    files,
+                    symbolStates
+                });
+            } catch (e) {
+                console.error('[PayloadManager] Ошибка сохранения состояния файлов:', e);
+            }
+        }, 400);
+    }
 
     async addFiles(uris: vscode.Uri[]): Promise<void> {
         for (const uri of uris) {
@@ -110,6 +237,7 @@ export class PayloadManager {
             this.symbolStates.delete(uriStr);
             await this._loadSymbolsForFile(uri);
         }
+        this._scheduleFilesSave();
     }
 
     async removeFile(uri: vscode.Uri): Promise<void> {
@@ -117,6 +245,7 @@ export class PayloadManager {
         this.selectedFiles.delete(uriStr);
         this.symbolTree.delete(uriStr);
         this.symbolStates.delete(uriStr);
+        this._scheduleFilesSave();
     }
 
     async toggleSymbol(uri: vscode.Uri, symbolId: string): Promise<void> {
@@ -131,7 +260,6 @@ export class PayloadManager {
         const newState = !currentState;
         states.set(symbolId, newState);
 
-        // Рекурсивно обновляем детей, если галочку сняли
         const updateChildren = (nodes: SymbolNode[], parentId: string, enabled: boolean): boolean => {
             for (const node of nodes) {
                 if (node.id === parentId) {
@@ -149,7 +277,6 @@ export class PayloadManager {
             return false;
         };
 
-        // Рекурсивно обновляем родителей, если галочку поставили
         const updateParents = (nodes: SymbolNode[], childId: string, enabled: boolean, parents: string[] = []): boolean => {
             for (const node of nodes) {
                 if (node.id === childId) {
@@ -170,6 +297,8 @@ export class PayloadManager {
         } else {
             updateParents(tree, symbolId, true);
         }
+
+        this._scheduleFilesSave();
     }
 
     async getFilesInfo(): Promise<FileInfo[]> {
@@ -179,7 +308,6 @@ export class PayloadManager {
             const symbols = this.symbolTree.get(uriStr) || [];
             const states = this.symbolStates.get(uriStr) || new Map();
             
-            // Конвертируем Map в обычный объект для передачи в Webview
             const statesObj: Record<string, boolean> = {};
             states.forEach((val, key) => statesObj[key] = val);
 
@@ -222,12 +350,9 @@ export class PayloadManager {
                 }
             }
 
-            // Фильтруем переменные из дерева
             convertedSymbols = filterSymbols(convertedSymbols);
-
             this.symbolTree.set(uriStr, convertedSymbols);
             
-            // Инициализируем все состояния как true (включено)
             const states = new Map<string, boolean>();
             const initStates = (nodes: SymbolNode[]) => {
                 for (const node of nodes) {
@@ -290,19 +415,16 @@ export class PayloadManager {
                 const symbols = this.symbolTree.get(uriStr) || [];
                 const states = this.symbolStates.get(uriStr) || new Map();
 
-                // Собираем диапазоны, которые нужно исключить (заменить на пробелы)
                 const collectExclusionRanges = (nodes: SymbolNode[]): {start: number, end: number}[] => {
                     const ranges: {start: number, end: number}[] = [];
                     for (const node of nodes) {
                         const isEnabled = states.get(node.id) ?? true;
                         if (!isEnabled) {
-                            // Если узел выключен, исключаем весь его диапазон (включая детей)
                             ranges.push({
                                 start: doc.offsetAt(node.range.start),
                                 end: doc.offsetAt(node.range.end)
                             });
                         } else {
-                            // Если узел включен, проверяем его детей
                             ranges.push(...collectExclusionRanges(node.children));
                         }
                     }
@@ -312,13 +434,10 @@ export class PayloadManager {
                 const exclusionRanges = collectExclusionRanges(symbols);
                 exclusionRanges.sort((a, b) => a.start - b.start);
 
-                // Строим итоговый контент, заменяя исключенные диапазоны на пробелы
                 let fileContent = '';
                 let lastIndex = 0;
                 for (const range of exclusionRanges) {
                     fileContent += fullContent.substring(lastIndex, range.start);
-                    const length = range.end - range.start;
-                    //fileContent += ' '.repeat(length); // Сохраняем длину и структуру строк
                     fileContent += '...';
                     lastIndex = range.end;
                 }
@@ -328,7 +447,6 @@ export class PayloadManager {
                 } else {
                     finalPrompt += `--- Файл: ${fileName} ---\n\`\`\`\n${fileContent}\n\`\`\`\n\n`;
                 }
-                //finalPrompt += `--- Файл: ${fileName} ---\n\`\`\`\n${fileContent}\n\`\`\`\n\n`;
             } catch (e) {
                 const fileName = uri.fsPath.split(/[/\\]/).pop() || uri.fsPath;
                 finalPrompt += `--- Файл: ${fileName} ---\n[Ошибка чтения файла: ${e}]\n\n`;
