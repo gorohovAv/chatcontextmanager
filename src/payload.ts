@@ -318,12 +318,17 @@ export class PayloadManager {
                 for (const range of exclusionRanges) {
                     fileContent += fullContent.substring(lastIndex, range.start);
                     const length = range.end - range.start;
-                    fileContent += ' '.repeat(length); // Сохраняем длину и структуру строк
+                    //fileContent += ' '.repeat(length); // Сохраняем длину и структуру строк
+                    fileContent += '...';
                     lastIndex = range.end;
                 }
                 fileContent += fullContent.substring(lastIndex);
-
-                finalPrompt += `--- Файл: ${fileName} ---\n\`\`\`\n${fileContent}\n\`\`\`\n\n`;
+                if(exclusionRanges.length > 0) {
+                    finalPrompt += `--- Файл(частично): ${fileName} ---\n\`\`\`\n${fileContent}\n\`\`\`\n\n`;
+                } else {
+                    finalPrompt += `--- Файл: ${fileName} ---\n\`\`\`\n${fileContent}\n\`\`\`\n\n`;
+                }
+                //finalPrompt += `--- Файл: ${fileName} ---\n\`\`\`\n${fileContent}\n\`\`\`\n\n`;
             } catch (e) {
                 const fileName = uri.fsPath.split(/[/\\]/).pop() || uri.fsPath;
                 finalPrompt += `--- Файл: ${fileName} ---\n[Ошибка чтения файла: ${e}]\n\n`;
