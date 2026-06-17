@@ -46,6 +46,7 @@ class PromptBuilderViewProvider implements vscode.WebviewViewProvider {
         // Восстанавливаем персистентное состояние
         await this.payloadManager.loadState();
         const savedUserText = await this.payloadManager.getUserText();
+        const savedTreeSettings = await this.payloadManager.getTreeSettings();
         const filesInfo = await this.payloadManager.getFilesInfo();
 
         const systemPrompt = this.sysPromptManager.getSystemPrompt();
@@ -56,7 +57,8 @@ class PromptBuilderViewProvider implements vscode.WebviewViewProvider {
             systemPrompt,
             projectPrompt,
             savedUserText,
-            filesInfo
+            filesInfo,
+            savedTreeSettings
         );
 
         // Принудительное сохранение при уничтожении webview (закрытие вкладки/VS Code)
@@ -114,6 +116,13 @@ class PromptBuilderViewProvider implements vscode.WebviewViewProvider {
                 case 'saveUserText':
                     await this.payloadManager.saveUserText(data.text);
                     break;
+                case 'saveTreeSettings':
+                    await this.payloadManager.saveTreeSettings({
+                        includeTree: !!data.includeTree,
+                        useGitignore: !!data.useGitignore,
+                        customIgnore: data.customIgnore || ''
+                    });
+                    break;
                 case 'requestCharCount':
                     const length = await this.payloadManager.getCompiledPromptLength(
                         this.sysPromptManager.getSystemPrompt(),
@@ -149,12 +158,14 @@ class PromptBuilderViewProvider implements vscode.WebviewViewProvider {
         systemPrompt: string,
         projectPrompt: string,
         userText: string,
-        filesInfo: FileInfo[]
+        filesInfo: FileInfo[],
+        treeSettings: { includeTree: boolean; useGitignore: boolean; customIgnore: string }
     ) {
         const safeSystemPrompt = JSON.stringify(systemPrompt);
         const safeProjectPrompt = JSON.stringify(projectPrompt);
         const safeUserText = JSON.stringify(userText);
         const safeFilesInfo = JSON.stringify(filesInfo);
+        const safeTreeSettings = JSON.stringify(treeSettings);
 
         return `<!DOCTYPE html>
         <html lang="ru">
@@ -362,6 +373,7 @@ class PromptBuilderViewProvider implements vscode.WebviewViewProvider {
                 
                 // Начальное состояние из extension (восстановлено из workspaceState)
                 const initialFiles = ${safeFilesInfo};
+                const initialTreeSettings = ${safeTreeSettings};
                 let files = initialFiles || [];
                 const expandedFiles = new Set();
 
@@ -374,6 +386,11 @@ class PromptBuilderViewProvider implements vscode.WebviewViewProvider {
                 const customIgnoreEl = document.getElementById('customIgnore');
                 const treeSettingsEl = document.getElementById('treeSettings');
                 const charCountBadge = document.getElementById('charCountBadge');
+
+                // Восстанавливаем настройки дерева из сохранённого состояния
+                includeTreeEl.checked = !!initialTreeSettings.includeTree;
+                useGitignoreEl.checked = !!initialTreeSettings.useGitignore;
+                customIgnoreEl.value = initialTreeSettings.customIgnore || '';
 
                 function updateTreeSettingsVisibility() {
                     if (includeTreeEl.checked) {
@@ -393,15 +410,38 @@ class PromptBuilderViewProvider implements vscode.WebviewViewProvider {
                     }
                 }
 
+                // Применяем начальную видимость и состояние ignore
+                updateTreeSettingsVisibility();
+                updateCustomIgnoreState();
+
+                // Debounce для сохранения настроек дерева
+                let treeSettingsTimer = null;
+                function saveTreeSettingsDebounced() {
+                    if (treeSettingsTimer) clearTimeout(treeSettingsTimer);
+                    treeSettingsTimer = setTimeout(() => {
+                        vscode.postMessage({
+                            type: 'saveTreeSettings',
+                            includeTree: includeTreeEl.checked,
+                            useGitignore: useGitignoreEl.checked,
+                            customIgnore: customIgnoreEl.value
+                        });
+                    }, 400);
+                }
+
                 includeTreeEl.addEventListener('change', () => {
                     updateTreeSettingsVisibility();
+                    saveTreeSettingsDebounced();
                     requestCharCount();
                 });
                 useGitignoreEl.addEventListener('change', () => {
                     updateCustomIgnoreState();
+                    saveTreeSettingsDebounced();
                     requestCharCount();
                 });
-                updateCustomIgnoreState();
+                customIgnoreEl.addEventListener('input', () => {
+                    saveTreeSettingsDebounced();
+                    requestCharCountDebounced();
+                });
 
                 // Debounce для текстовых полей
                 let charCountTimer = null;
@@ -428,7 +468,6 @@ class PromptBuilderViewProvider implements vscode.WebviewViewProvider {
                         text: document.getElementById('userText').value 
                     });
                 });
-                customIgnoreEl.addEventListener('input', requestCharCountDebounced);
 
                 document.getElementById('addFileBtn').addEventListener('click', () => {
                     vscode.postMessage({ type: 'addFile' });

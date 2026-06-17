@@ -18,6 +18,12 @@ export interface FileInfo {
     states: Record<string, boolean>;
 }
 
+export interface TreeSettings {
+    includeTree: boolean;
+    useGitignore: boolean;
+    customIgnore: string;
+}
+
 export interface CompileOptions {
     includeTree?: boolean;
     useGitignore?: boolean;
@@ -29,6 +35,7 @@ interface PersistedPayloadState {
     userText?: string;
     files?: string[];
     symbolStates?: Record<string, Record<string, boolean>>;
+    treeSettings?: TreeSettings;
 }
 
 function rangeToId(range: vscode.Range): string {
@@ -111,6 +118,7 @@ export class PayloadManager {
 
     private saveFilesTimeout: ReturnType<typeof setTimeout> | null = null;
     private saveUserTextTimeout: ReturnType<typeof setTimeout> | null = null;
+    private saveTreeSettingsTimeout: ReturnType<typeof setTimeout> | null = null;
 
     constructor(private context: vscode.ExtensionContext) {}
 
@@ -146,6 +154,11 @@ export class PayloadManager {
         return state?.userText || '';
     }
 
+    async getTreeSettings(): Promise<TreeSettings> {
+        const state = this.context.workspaceState.get<PersistedPayloadState>(PayloadManager.PAYLOAD_KEY);
+        return state?.treeSettings || { includeTree: false, useGitignore: false, customIgnore: '' };
+    }
+
     async saveUserText(text: string): Promise<void> {
         if (this.saveUserTextTimeout) {
             clearTimeout(this.saveUserTextTimeout);
@@ -164,6 +177,24 @@ export class PayloadManager {
         }, 400);
     }
 
+    async saveTreeSettings(settings: TreeSettings): Promise<void> {
+        if (this.saveTreeSettingsTimeout) {
+            clearTimeout(this.saveTreeSettingsTimeout);
+        }
+
+        this.saveTreeSettingsTimeout = setTimeout(async () => {
+            try {
+                const current = this.context.workspaceState.get<PersistedPayloadState>(PayloadManager.PAYLOAD_KEY) || {};
+                await this.context.workspaceState.update(PayloadManager.PAYLOAD_KEY, {
+                    ...current,
+                    treeSettings: settings
+                });
+            } catch (e) {
+                console.error('[PayloadManager] Ошибка сохранения treeSettings:', e);
+            }
+        }, 400);
+    }
+
     /**
      * Принудительное сохранение всех данных без debounce.
      * Вызывается при уничтожении webview (закрытие вкладки/VS Code).
@@ -178,8 +209,12 @@ export class PayloadManager {
             clearTimeout(this.saveUserTextTimeout);
             this.saveUserTextTimeout = null;
         }
+        if (this.saveTreeSettingsTimeout) {
+            clearTimeout(this.saveTreeSettingsTimeout);
+            this.saveTreeSettingsTimeout = null;
+        }
 
-        // Сохраняем немедленно
+        // Сохраняем файлы и состояния символов немедленно
         try {
             const files = Array.from(this.selectedFiles.keys());
             const symbolStates: Record<string, Record<string, boolean>> = {};
