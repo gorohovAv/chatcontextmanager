@@ -465,6 +465,7 @@ export class PayloadManager {
             }
 
             // === Уровень 2: Folding Range Provider ===
+            /*
             if (convertedSymbols.length === 0) {
                 try {
                     const foldingRanges = await vscode.commands.executeCommand<vscode.FoldingRange[]>(
@@ -478,7 +479,7 @@ export class PayloadManager {
                 } catch (e) {
                     console.warn(`[PayloadManager] Folding ranges failed for ${uriStr}:`, e);
                 }
-            }
+            }*/
 
             // === Уровень 3: Regex-парсинг ===
             if (convertedSymbols.length === 0) {
