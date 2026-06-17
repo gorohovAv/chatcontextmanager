@@ -334,6 +334,7 @@ class PromptBuilderViewProvider implements vscode.WebviewViewProvider {
             <script>
                 const vscode = acquireVsCodeApi();
                 let files = [];
+                const expandedFiles = new Set();
 
                 document.getElementById('systemPrompt').value = ${safeSystemPrompt};
                 document.getElementById('projectPrompt').value = ${safeProjectPrompt};
@@ -441,10 +442,12 @@ class PromptBuilderViewProvider implements vscode.WebviewViewProvider {
                     if (isExpanded) {
                         fileDiv.classList.remove('expanded');
                         fileDiv.querySelector('.symbols-container').innerHTML = '';
+                        expandedFiles.delete(file.uri);
                     } else {
                         fileDiv.classList.add('expanded');
                         const symbolsContainer = fileDiv.querySelector('.symbols-container');
                         renderSymbols(symbolsContainer, file.symbols, file.uri, file.states);
+                        expandedFiles.add(file.uri);
                     }
                 }
 
@@ -564,6 +567,7 @@ class PromptBuilderViewProvider implements vscode.WebviewViewProvider {
                         removeBtn.innerText = '✕';
                         removeBtn.onclick = (e) => {
                             e.stopPropagation();
+                            expandedFiles.delete(file.uri);
                             vscode.postMessage({ type: 'removeFile', uri: file.uri });
                         };
                         
@@ -573,6 +577,12 @@ class PromptBuilderViewProvider implements vscode.WebviewViewProvider {
                         const symbolsContainer = document.createElement('div');
                         symbolsContainer.className = 'symbols-container';
                         div.appendChild(symbolsContainer);
+                        
+                        // Восстанавливаем состояние раскрытия
+                        if (expandedFiles.has(file.uri)) {
+                            div.classList.add('expanded');
+                            renderSymbols(symbolsContainer, file.symbols, file.uri, file.states);
+                        }
                         
                         // Сворачиваем/разворачиваем ТОЛЬКО при клике вне области чекбоксов.
                         // Это решает проблему сворачивания при клике по чекбоксу/label.
