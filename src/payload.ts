@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import { parseWithRegex } from './plTools';
 
 interface SymbolNode {
     id: string;
@@ -109,6 +110,78 @@ function filterSymbols(symbols: SymbolNode[]): SymbolNode[] {
         }));
 }
 
+/**
+ * Конвертирует folding ranges в иерархию SymbolNode.
+ * Folding ranges обычно соответствуют блокам кода (функции, классы, etc.)
+ */
+function buildSymbolsFromFoldingRanges(
+    ranges: vscode.FoldingRange[],
+    doc: vscode.TextDocument
+): SymbolNode[] {
+    if (!ranges || ranges.length === 0) return [];
+
+    // Сортируем по началу, затем по длине (длинные первыми — это родители)
+    const sorted = [...ranges].sort((a, b) => {
+        if (a.start !== b.start) return a.start - b.start;
+        return (b.end - b.start) - (a.end - a.start);
+    });
+
+    interface FlatNode {
+        node: SymbolNode;
+        start: number;
+        end: number;
+    }
+
+    const flatNodes: FlatNode[] = sorted.map(r => {
+        const startLine = r.start;
+        const endLine = r.end;
+        const firstLineText = doc.lineAt(startLine).text;
+        const trimmed = firstLineText.trim();
+        const name = trimmed.length > 60 ? trimmed.substring(0, 60) + '…' : (trimmed || `Блок ${startLine + 1}`);
+        const endLineText = doc.lineAt(endLine).text;
+        const fullRange = new vscode.Range(startLine, 0, endLine, endLineText.length);
+        const selectionRange = new vscode.Range(startLine, 0, startLine, firstLineText.length);
+
+        return {
+            node: {
+                id: rangeToId(fullRange),
+                name,
+                kind: vscode.SymbolKind.Namespace,
+                kindName: 'Блок',
+                range: fullRange,
+                selectionRange,
+                children: []
+            },
+            start: startLine,
+            end: endLine
+        };
+    });
+
+    // Строим иерархию: если range полностью внутри другого — становится ребёнком
+    const roots: SymbolNode[] = [];
+    const stack: FlatNode[] = [];
+
+    for (const current of flatNodes) {
+        // Выталкиваем из стека все узлы, которые не являются родителями текущего
+        while (stack.length > 0) {
+            const top = stack[stack.length - 1];
+            if (top.start <= current.start && top.end >= current.end && !(top.start === current.start && top.end === current.end)) {
+                break;
+            }
+            stack.pop();
+        }
+
+        if (stack.length === 0) {
+            roots.push(current.node);
+        } else {
+            stack[stack.length - 1].node.children.push(current.node);
+        }
+        stack.push(current);
+    }
+
+    return roots;
+}
+
 export class PayloadManager {
     private static readonly PAYLOAD_KEY = 'promptBuilder.payload';
 
@@ -200,7 +273,6 @@ export class PayloadManager {
      * Вызывается при уничтожении webview (закрытие вкладки/VS Code).
      */
     async flushSave(): Promise<void> {
-        // Отменяем pending debounce
         if (this.saveFilesTimeout) {
             clearTimeout(this.saveFilesTimeout);
             this.saveFilesTimeout = null;
@@ -214,7 +286,6 @@ export class PayloadManager {
             this.saveTreeSettingsTimeout = null;
         }
 
-        // Сохраняем файлы и состояния символов немедленно
         try {
             const files = Array.from(this.selectedFiles.keys());
             const symbolStates: Record<string, Record<string, boolean>> = {};
@@ -351,21 +422,83 @@ export class PayloadManager {
         return result;
     }
 
+    /**
+     * Загружает символы файла с трёхуровневым fallback:
+     * 1. Document Symbol Provider (LSP) с retry
+     * 2. Folding Range Provider (работает почти для всех языков)
+     * 3. Regex-парсинг для основных языков
+     * 4. "Entire File" как последний fallback
+     */
     private async _loadSymbolsForFile(uri: vscode.Uri): Promise<void> {
         const uriStr = uri.toString();
+        let convertedSymbols: SymbolNode[] = [];
+
         try {
-            const documentSymbols = await vscode.commands.executeCommand<
+            const doc = await vscode.workspace.openTextDocument(uri);
+            const fullRange = new vscode.Range(
+                doc.positionAt(0),
+                doc.positionAt(doc.getText().length)
+            );
+
+            // === Уровень 1: Document Symbol Provider (LSP) ===
+            let documentSymbols = await vscode.commands.executeCommand<
                 (vscode.DocumentSymbol | vscode.SymbolInformation)[]
             >('vscode.executeDocumentSymbolProvider', uri);
 
-            let convertedSymbols: SymbolNode[] = [];
-
+            // Retry: LSP мог не успеть инициализироваться
             if (!documentSymbols || documentSymbols.length === 0) {
-                const doc = await vscode.workspace.openTextDocument(uri);
-                const fullRange = new vscode.Range(
-                    doc.positionAt(0),
-                    doc.positionAt(doc.getText().length)
-                );
+                await new Promise(resolve => setTimeout(resolve, 1500));
+                documentSymbols = await vscode.commands.executeCommand<
+                    (vscode.DocumentSymbol | vscode.SymbolInformation)[]
+                >('vscode.executeDocumentSymbolProvider', uri);
+            }
+
+            if (documentSymbols && documentSymbols.length > 0) {
+                for (const sym of documentSymbols) {
+                    if ((sym as vscode.DocumentSymbol).children !== undefined) {
+                        convertedSymbols.push(convertDocumentSymbol(sym as vscode.DocumentSymbol));
+                    } else {
+                        convertedSymbols.push(convertSymbolInformation(sym as vscode.SymbolInformation));
+                    }
+                }
+                console.log(`[PayloadManager] LSP symbols loaded for ${uriStr}: ${convertedSymbols.length} top-level`);
+            }
+
+            // === Уровень 2: Folding Range Provider ===
+            if (convertedSymbols.length === 0) {
+                try {
+                    const foldingRanges = await vscode.commands.executeCommand<vscode.FoldingRange[]>(
+                        'vscode.executeFoldingRangeProvider',
+                        uri
+                    );
+                    if (foldingRanges && foldingRanges.length > 0) {
+                        convertedSymbols = buildSymbolsFromFoldingRanges(foldingRanges, doc);
+                        console.log(`[PayloadManager] Folding ranges used for ${uriStr}: ${convertedSymbols.length} top-level`);
+                    }
+                } catch (e) {
+                    console.warn(`[PayloadManager] Folding ranges failed for ${uriStr}:`, e);
+                }
+            }
+
+            // === Уровень 3: Regex-парсинг ===
+            if (convertedSymbols.length === 0) {
+                const regexResults = parseWithRegex(doc.getText(), doc.languageId);
+                if (regexResults.length > 0) {
+                    convertedSymbols = regexResults.map(r => ({
+                        id: rangeToId(r.range),
+                        name: r.name,
+                        kind: r.kind,
+                        kindName: getSymbolKindName(r.kind),
+                        range: r.range,
+                        selectionRange: r.range,
+                        children: []
+                    }));
+                    console.log(`[PayloadManager] Regex parsing used for ${uriStr} (${doc.languageId}): ${convertedSymbols.length} symbols`);
+                }
+            }
+
+            // === Уровень 4: Entire File ===
+            if (convertedSymbols.length === 0) {
                 convertedSymbols = [{
                     id: rangeToId(fullRange),
                     name: "Entire File",
@@ -375,14 +508,7 @@ export class PayloadManager {
                     selectionRange: fullRange,
                     children: []
                 }];
-            } else {
-                for (const sym of documentSymbols) {
-                    if ((sym as vscode.DocumentSymbol).children !== undefined) {
-                        convertedSymbols.push(convertDocumentSymbol(sym as vscode.DocumentSymbol));
-                    } else {
-                        convertedSymbols.push(convertSymbolInformation(sym as vscode.SymbolInformation));
-                    }
-                }
+                console.log(`[PayloadManager] Fallback to "Entire File" for ${uriStr}`);
             }
 
             convertedSymbols = filterSymbols(convertedSymbols);
@@ -399,25 +525,29 @@ export class PayloadManager {
             this.symbolStates.set(uriStr, states);
 
         } catch (error) {
-            console.error(`Failed to load symbols for ${uriStr}:`, error);
-            const doc = await vscode.workspace.openTextDocument(uri);
-            const fullRange = new vscode.Range(
-                doc.positionAt(0),
-                doc.positionAt(doc.getText().length)
-            );
-            const rootSymbol: SymbolNode = {
-                id: rangeToId(fullRange),
-                name: "Entire File",
-                kind: vscode.SymbolKind.File,
-                kindName: getSymbolKindName(vscode.SymbolKind.File),
-                range: fullRange,
-                selectionRange: fullRange,
-                children: []
-            };
-            this.symbolTree.set(uriStr, [rootSymbol]);
-            const states = new Map<string, boolean>();
-            states.set(rootSymbol.id, true);
-            this.symbolStates.set(uriStr, states);
+            console.error(`[PayloadManager] Failed to load symbols for ${uriStr}:`, error);
+            try {
+                const doc = await vscode.workspace.openTextDocument(uri);
+                const fullRange = new vscode.Range(
+                    doc.positionAt(0),
+                    doc.positionAt(doc.getText().length)
+                );
+                const rootSymbol: SymbolNode = {
+                    id: rangeToId(fullRange),
+                    name: "Entire File",
+                    kind: vscode.SymbolKind.File,
+                    kindName: getSymbolKindName(vscode.SymbolKind.File),
+                    range: fullRange,
+                    selectionRange: fullRange,
+                    children: []
+                };
+                this.symbolTree.set(uriStr, [rootSymbol]);
+                const states = new Map<string, boolean>();
+                states.set(rootSymbol.id, true);
+                this.symbolStates.set(uriStr, states);
+            } catch (e) {
+                console.error(`[PayloadManager] Critical error for ${uriStr}:`, e);
+            }
         }
     }
 
