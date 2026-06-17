@@ -333,7 +333,7 @@ class PromptBuilderViewProvider implements vscode.WebviewViewProvider {
         </head>
         <body>
             <details>
-                <summary>⚙️ Настройки промптов</summary>
+                <summary>Настройки промптов</summary>
                 <div style="margin-top: 10px;">
                     <label style="display: block; margin-bottom: 5px; font-weight: bold;">Системный промпт:</label>
                     <textarea id="systemPrompt" class="small" placeholder="Глобальный системный промпт..."></textarea>
@@ -347,18 +347,18 @@ class PromptBuilderViewProvider implements vscode.WebviewViewProvider {
 
             <textarea id="userText" placeholder="Введите основной текст промпта здесь..."></textarea>
             
-            <button id="addFileBtn" class="secondary">📎 Добавить файлы из проекта</button>
+            <button id="addFileBtn" class="secondary">Добавить файлы из проекта</button>
             <div id="fileList"></div>
             
             <div class="checkbox-container">
                 <input type="checkbox" id="includeTree">
-                <label for="includeTree">🌳 Дерево (добавить структуру файлов)</label>
+                <label for="includeTree">Дерево (добавить структуру файлов)</label>
             </div>
 
             <div id="treeSettings" class="tree-settings hidden">
                 <div class="checkbox-container" style="margin-bottom: 8px;">
                     <input type="checkbox" id="useGitignore">
-                    <label for="useGitignore">📜 Использовать .gitignore</label>
+                    <label for="useGitignore">Использовать .gitignore</label>
                 </div>
 
                 <label style="display: block; margin-bottom: 5px; font-weight: bold;">Альтернативный ignore-файл:</label>
@@ -366,7 +366,7 @@ class PromptBuilderViewProvider implements vscode.WebviewViewProvider {
                 <textarea id="customIgnore" class="ignore" placeholder="node_modules&#10;dist&#10;*.log&#10;.env"></textarea>
             </div>
             
-            <button id="copyBtn">📋 В буфер обмена (<span id="charCountBadge">0</span> симв.)</button>
+            <button id="copyBtn">В буфер обмена (<span id="charCountBadge">0</span> симв.)</button>
 
             <script>
                 const vscode = acquireVsCodeApi();
