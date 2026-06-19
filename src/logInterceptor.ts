@@ -48,7 +48,7 @@ export class LogInterceptorManager {
     public async start() {
         if (this.isActive) return;
         if (!this.logFilePath) {
-            vscode.window.showErrorMessage('Сначала выберите файл для логов!');
+            vscode.window.showErrorMessage('Choose file for your logs first!');
             return;
         }
 
@@ -58,7 +58,7 @@ export class LogInterceptorManager {
             // onDidWriteTerminalData - это proposed API, поэтому используем any
             const windowAny = vscode.window as any;
             if (typeof windowAny.onDidWriteTerminalData !== 'function') {
-                vscode.window.showErrorMessage('API onDidWriteTerminalData недоступно. Убедитесь, что расширение запущено с поддержкой proposed API (terminalDataWriteEvent).');
+                vscode.window.showErrorMessage('API onDidWriteTerminalData is not accesible. Make sure that plugin is started with proposed API (terminalDataWriteEvent).');
                 this.writeStream.end();
                 this.writeStream = undefined;
                 return;
@@ -200,11 +200,11 @@ export class LogInterceptorViewProvider implements vscode.WebviewViewProvider {
             </style>
         </head>
         <body>
-            <label style="display: block; margin-bottom: 5px; font-weight: bold;">Файл для логов:</label>
-            <div id="filePath" class="file-path">Не выбран</div>
-            <button id="selectFileBtn" class="secondary">📁 Выбрать файл</button>
+            <label style="display: block; margin-bottom: 5px; font-weight: bold;">Log file:</label>
+            <div id="filePath" class="file-path">Not choosen</div>
+            <button id="selectFileBtn" class="secondary">📁 Pick file</button>
             
-            <button id="toggleWorkerBtn">▶ Активировать воркер</button>
+            <button id="toggleWorkerBtn">▶ Run worker</button>
             
             <div class="stats">
                 Записано строк: <strong id="linesCount">0</strong>
@@ -228,14 +228,14 @@ export class LogInterceptorViewProvider implements vscode.WebviewViewProvider {
                     const message = event.data;
                     if (message.type === 'updateState') {
                         const state = message.state;
-                        filePathEl.textContent = state.logFilePath || 'Не выбран';
+                        filePathEl.textContent = state.logFilePath || 'Not choosen';
                         linesCountEl.textContent = state.linesWritten.toLocaleString();
                         
                         if (state.isActive) {
-                            toggleWorkerBtn.textContent = '⏹ Остановить воркер';
+                            toggleWorkerBtn.textContent = '⏹ Stop worker';
                             toggleWorkerBtn.classList.add('stop');
                         } else {
-                            toggleWorkerBtn.textContent = '▶ Активировать воркер';
+                            toggleWorkerBtn.textContent = '▶ Run worker';
                             toggleWorkerBtn.classList.remove('stop');
                         }
                     }

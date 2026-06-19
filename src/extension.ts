@@ -356,8 +356,8 @@ class PromptBuilderViewProvider implements vscode.WebviewViewProvider {
                     <textarea id="systemPrompt" class="small" placeholder="Global prompt..."></textarea>
                     <button id="saveSystemPromptBtn" class="secondary">💾 Save global prompt</button>
                     
-                    <label style="display: block; margin-bottom: 5px; font-weight: bold;">Промпт проекта:</label>
-                    <textarea id="projectPrompt" class="small" placeholder="Промпт для текущего проекта..."></textarea>
+                    <label style="display: block; margin-bottom: 5px; font-weight: bold;">Project prompt:</label>
+                    <textarea id="projectPrompt" class="small" placeholder="Local prompt for this particular project..."></textarea>
                     <button id="saveProjectPromptBtn" class="secondary">💾 Save project prompt</button>
                 </div>
             </details>
