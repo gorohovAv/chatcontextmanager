@@ -465,7 +465,7 @@ export class PayloadManager {
             }
 
             // === Уровень 2: Folding Range Provider ===
-            /*
+            /* работает плохо хрен с ним
             if (convertedSymbols.length === 0) {
                 try {
                     const foldingRanges = await vscode.commands.executeCommand<vscode.FoldingRange[]>(
