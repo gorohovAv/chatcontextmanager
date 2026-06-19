@@ -2,10 +2,12 @@ import * as vscode from 'vscode';
 import { SystemPromptManager } from './sysPrompt';
 import { TreeManager, TreeOptions } from './tree';
 import { PayloadManager, FileInfo } from './payload';
+import { LogInterceptorViewProvider } from './logInterceptor';
 
 export function activate(context: vscode.ExtensionContext) {
     console.log('🚀 [МОЕ РАСШИРЕНИЕ] Функция activate() вызвана!');
 
+    // --- Регистрация основной плашки Prompt Builder ---
     const provider = new PromptBuilderViewProvider(context);
     
     const disposable = vscode.window.registerWebviewViewProvider(
@@ -20,7 +22,22 @@ export function activate(context: vscode.ExtensionContext) {
     
     context.subscriptions.push(disposable);
     console.log('✅ [МОЕ РАСШИРЕНИЕ] Провайдер успешно зарегистрирован! viewType:', PromptBuilderViewProvider.viewType);
+
+    // --- Регистрация новой плашки Log Interceptor ---
+    const logProvider = new LogInterceptorViewProvider(context);
+    const logDisposable = vscode.window.registerWebviewViewProvider(
+        LogInterceptorViewProvider.viewType,
+        logProvider,
+        {
+            webviewOptions: {
+                retainContextWhenHidden: true
+            }
+        }
+    );
+    context.subscriptions.push(logDisposable);
+    console.log('✅ [МОЕ РАСШИРЕНИЕ] Провайдер логов успешно зарегистрирован! viewType:', LogInterceptorViewProvider.viewType);
 }
+
 
 class PromptBuilderViewProvider implements vscode.WebviewViewProvider {
     public static readonly viewType = 'promptBuilderView';

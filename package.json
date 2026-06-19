@@ -11,6 +11,9 @@
   ],
   "activationEvents": [],
   "main": "./dist/extension.js",
+  "enabledApiProposals": [
+    "terminalDataWriteEvent"
+  ],
   "contributes": {
     "viewsContainers": {
       "activitybar": [
@@ -27,6 +30,11 @@
           "type": "webview",
           "id": "promptBuilderView",
           "name": "Prompt Builder"
+        },
+        {
+          "type": "webview",
+          "id": "logInterceptorView",
+          "name": "Log Interceptor"
         }
       ]
     }
