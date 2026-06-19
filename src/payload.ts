@@ -560,18 +560,18 @@ export class PayloadManager {
     ): Promise<string> {
         let finalPrompt = '';
 
-        if (systemPrompt.trim()) finalPrompt += `# Системный промпт\n${systemPrompt.trim()}\n\n`;
-        if (projectPrompt.trim()) finalPrompt += `# Промпт проекта\n${projectPrompt.trim()}\n\n`;
+        if (systemPrompt.trim()) finalPrompt += `# System prompt\n${systemPrompt.trim()}\n\n`;
+        if (projectPrompt.trim()) finalPrompt += `# Project prompt\n${projectPrompt.trim()}\n\n`;
 
         if (options.includeTree) {
             const tree = await options.getProjectTree({
                 useGitignore: options.useGitignore,
                 customIgnore: options.customIgnore
             });
-            if (tree.trim()) finalPrompt += `# Структура проекта\n\`\`\`\n${tree}\`\`\`\n\n`;
+            if (tree.trim()) finalPrompt += `# Project structure\n\`\`\`\n${tree}\`\`\`\n\n`;
         }
 
-        if (userText.trim()) finalPrompt += `# Задача\n${userText.trim()}\n\n`;
+        if (userText.trim()) finalPrompt += `# Task\n${userText.trim()}\n\n`;
 
         for (const [uriStr, uri] of this.selectedFiles) {
             try {
@@ -609,13 +609,13 @@ export class PayloadManager {
                 }
                 fileContent += fullContent.substring(lastIndex);
                 if(exclusionRanges.length > 0) {
-                    finalPrompt += `--- Файл(частично): ${fileName} ---\n\`\`\`\n${fileContent}\n\`\`\`\n\n`;
+                    finalPrompt += `--- File(Part): ${fileName} ---\n\`\`\`\n${fileContent}\n\`\`\`\n\n`;
                 } else {
-                    finalPrompt += `--- Файл: ${fileName} ---\n\`\`\`\n${fileContent}\n\`\`\`\n\n`;
+                    finalPrompt += `--- File: ${fileName} ---\n\`\`\`\n${fileContent}\n\`\`\`\n\n`;
                 }
             } catch (e) {
                 const fileName = uri.fsPath.split(/[/\\]/).pop() || uri.fsPath;
-                finalPrompt += `--- Файл: ${fileName} ---\n[Ошибка чтения файла: ${e}]\n\n`;
+                finalPrompt += `--- File: ${fileName} ---\n[Reading error: ${e}]\n\n`;
             }
         }
 

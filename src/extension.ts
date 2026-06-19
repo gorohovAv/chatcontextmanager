@@ -120,15 +120,15 @@ class PromptBuilderViewProvider implements vscode.WebviewViewProvider {
                         }
                     );
                     await vscode.env.clipboard.writeText(finalPrompt.trim());
-                    vscode.window.showInformationMessage('✅ Промпт успешно скопирован в буфер обмена!');
+                    vscode.window.showInformationMessage('✅ Prompt is in clipboard!');
                     break;
                 case 'saveSystemPrompt':
                     await this.sysPromptManager.setSystemPrompt(data.prompt);
-                    vscode.window.showInformationMessage('✅ Системный промпт сохранен!');
+                    vscode.window.showInformationMessage('✅ Global prompt is saved!');
                     break;
                 case 'saveProjectPrompt':
                     await this.sysPromptManager.setProjectPrompt(data.prompt);
-                    vscode.window.showInformationMessage('✅ Промпт проекта сохранен!');
+                    vscode.window.showInformationMessage('✅ Project prompt is saved!');
                     break;
                 case 'saveUserText':
                     await this.payloadManager.saveUserText(data.text);
@@ -350,40 +350,40 @@ class PromptBuilderViewProvider implements vscode.WebviewViewProvider {
         </head>
         <body>
             <details>
-                <summary>Настройки промптов</summary>
+                <summary>Prompt settings</summary>
                 <div style="margin-top: 10px;">
-                    <label style="display: block; margin-bottom: 5px; font-weight: bold;">Системный промпт:</label>
-                    <textarea id="systemPrompt" class="small" placeholder="Глобальный системный промпт..."></textarea>
-                    <button id="saveSystemPromptBtn" class="secondary">💾 Сохранить системный промпт</button>
+                    <label style="display: block; margin-bottom: 5px; font-weight: bold;">Global prompt:</label>
+                    <textarea id="systemPrompt" class="small" placeholder="Global prompt..."></textarea>
+                    <button id="saveSystemPromptBtn" class="secondary">💾 Save global prompt</button>
                     
                     <label style="display: block; margin-bottom: 5px; font-weight: bold;">Промпт проекта:</label>
                     <textarea id="projectPrompt" class="small" placeholder="Промпт для текущего проекта..."></textarea>
-                    <button id="saveProjectPromptBtn" class="secondary">💾 Сохранить промпт проекта</button>
+                    <button id="saveProjectPromptBtn" class="secondary">💾 Save project prompt</button>
                 </div>
             </details>
 
-            <textarea id="userText" placeholder="Введите основной текст промпта здесь..."></textarea>
+            <textarea id="userText" placeholder="Enter your actual promt here..."></textarea>
             
-            <button id="addFileBtn" class="secondary">Добавить файлы из проекта</button>
+            <button id="addFileBtn" class="secondary">Inject files</button>
             <div id="fileList"></div>
             
             <div class="checkbox-container">
                 <input type="checkbox" id="includeTree">
-                <label for="includeTree">Дерево (добавить структуру файлов)</label>
+                <label for="includeTree">Tree (project structure)</label>
             </div>
 
             <div id="treeSettings" class="tree-settings hidden">
                 <div class="checkbox-container" style="margin-bottom: 8px;">
                     <input type="checkbox" id="useGitignore">
-                    <label for="useGitignore">Использовать .gitignore</label>
+                    <label for="useGitignore">Use .gitignore</label>
                 </div>
 
-                <label style="display: block; margin-bottom: 5px; font-weight: bold;">Альтернативный ignore-файл:</label>
-                <div class="hint">Формат как у .gitignore. Не сохраняется — только для этого промпта.</div>
+                <label style="display: block; margin-bottom: 5px; font-weight: bold;">Alternative ignore-file:</label>
+                <div class="hint">.gitignore-like text. Not persisted.</div>
                 <textarea id="customIgnore" class="ignore" placeholder="node_modules&#10;dist&#10;*.log&#10;.env"></textarea>
             </div>
             
-            <button id="copyBtn">В буфер обмена (<span id="charCountBadge">0</span> симв.)</button>
+            <button id="copyBtn">Clipboard (<span id="charCountBadge">0</span> chars)</button>
 
             <script>
                 const vscode = acquireVsCodeApi();

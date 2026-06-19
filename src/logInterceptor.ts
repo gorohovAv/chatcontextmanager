@@ -78,9 +78,9 @@ export class LogInterceptorManager {
 
             this.isActive = true;
             this.onStateChangedEmitter.fire();
-            vscode.window.showInformationMessage('✅ Воркер перехвата логов запущен.');
+            vscode.window.showInformationMessage('✅ Intercepting worker is running.');
         } catch (err) {
-            vscode.window.showErrorMessage(`Ошибка запуска воркера: ${err}`);
+            vscode.window.showErrorMessage(`Worker error: ${err}`);
         }
     }
 
@@ -98,7 +98,7 @@ export class LogInterceptorManager {
         
         this.isActive = false;
         this.onStateChangedEmitter.fire();
-        vscode.window.showInformationMessage('⏹ Воркер перехвата логов остановлен.');
+        vscode.window.showInformationMessage('⏹ worker stopped.');
     }
 
     public dispose() {
