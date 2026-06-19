@@ -2,7 +2,8 @@
   "name": "chatcontextmanager",
   "displayName": "ChatContextManager",
   "description": "Easily compile a prompt for any AI chat ",
-  "version": "0.0.1",
+  "version": "1.0.0",
+  "publisher": "Eggplant11",
   "engines": {
     "vscode": "^1.120.0"
   },
@@ -20,7 +21,7 @@
         {
           "id": "prompt-builder",
           "title": "Prompt Builder",
-          "icon": "resources/icon.svg"
+          "icon": "resources/icon.png"
         }
       ]
     },
