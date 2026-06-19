@@ -4,6 +4,10 @@
   "description": "Easily compile a prompt for any AI chat",
   "version": "1.0.1",
   "publisher": "Eggplant11",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/gorohovAv/chatcontextmanager.git"
+  },
   "icon": "resources/icon.png", 
   "engines": {
     "vscode": "^1.120.0"
