@@ -207,7 +207,7 @@ export class LogInterceptorViewProvider implements vscode.WebviewViewProvider {
             <button id="toggleWorkerBtn">▶ Run worker</button>
             
             <div class="stats">
-                Записано строк: <strong id="linesCount">0</strong>
+                Strings written: <strong id="linesCount">0</strong>
             </div>
 
             <script>

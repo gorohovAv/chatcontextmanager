@@ -1,14 +1,24 @@
 {
   "name": "chatcontextmanager",
-  "displayName": "ChatContextManager",
-  "description": "Easily compile a prompt for any AI chat ",
-  "version": "1.0.0",
+  "displayName": "PromptScoop",
+  "description": "Easily compile a prompt for any AI chat",
+  "version": "1.0.1",
   "publisher": "Eggplant11",
+  "icon": "resources/icon.png", 
   "engines": {
     "vscode": "^1.120.0"
   },
   "categories": [
+    "AI",
+    "Chat",
     "Other"
+  ],
+    "keywords": [
+    "prompt",
+    "ai",
+    "chat",
+    "llm",
+    "context"
   ],
   "activationEvents": [],
   "main": "./dist/extension.js",

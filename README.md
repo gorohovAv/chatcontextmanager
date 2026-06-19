@@ -10,6 +10,10 @@ https://github.com/gorohovAv/chatcontextmanager
 - full and partial file injection
 - log intercepting
 
+## Screenshots
+
+![Screenshot](./resources/myScreenFoPlugin.png)
+
 ### 1.0.0
 
 Initial release
