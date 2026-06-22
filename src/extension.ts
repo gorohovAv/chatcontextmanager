@@ -9,6 +9,7 @@ import { TreeManager, TreeOptions } from './tree';
 import { PayloadManager, FileInfo } from './payload';
 import { LogInterceptorViewProvider } from './logInterceptor';
 import { SettingsViewProvider } from './settingsView';
+import { getGitHistory } from './history';
 
 const execAsync = promisify(exec);
 
@@ -76,6 +77,7 @@ class PromptBuilderViewProvider implements vscode.WebviewViewProvider {
     private treeManager: TreeManager;
     private payloadManager: PayloadManager;
     private _dbStructure: string = '';
+    private _gitHistory: string = '';
 
     constructor(private readonly context: vscode.ExtensionContext) {
         this.sysPromptManager = new SystemPromptManager(context);
@@ -130,6 +132,19 @@ class PromptBuilderViewProvider implements vscode.WebviewViewProvider {
                     await this.payloadManager.toggleSymbol(vscode.Uri.parse(data.uri), data.symbolId);
                     this._updateFileList();
                     break;
+                case 'fetchGitHistory':
+                    this._view?.webview.postMessage({ type: 'gitStatus', text: 'Fetching git history...' });
+                    this._gitHistory = '';
+                    
+                    try {
+                        const commitCount = parseInt(data.commitCount) || 5;
+                        const history = await getGitHistory(commitCount);
+                        this._gitHistory = history.trim();
+                        this._view?.webview.postMessage({ type: 'gitHistoryReady', commitCount });
+                    } catch (e: any) {
+                        this._view?.webview.postMessage({ type: 'gitError', error: e.message });
+                    }
+                    break;
                 case 'compileAndCopy':
                     let finalPrompt = await this.payloadManager.compileFullPrompt(
                         this.sysPromptManager.getSystemPrompt(),
@@ -142,6 +157,11 @@ class PromptBuilderViewProvider implements vscode.WebviewViewProvider {
                             getProjectTree: (opts) => this.treeManager.getProjectTree(opts)
                         }
                     );
+                    
+                    if (data.includeGitHistory && this._gitHistory) {
+                        const commitCount = parseInt(data.gitCommitCount) || 5;
+                        finalPrompt += `\n\n# Git History (last ${commitCount} commits)\n${this._gitHistory}`;
+                    }
                     
                     if (data.includeDb && this._dbStructure) {
                         finalPrompt += `\n\n${this._dbStructure}`;
@@ -180,6 +200,12 @@ class PromptBuilderViewProvider implements vscode.WebviewViewProvider {
                             getProjectTree: (opts) => this.treeManager.getProjectTree(opts)
                         }
                     );
+                    
+                    if (data.includeGitHistory && this._gitHistory) {
+                        const commitCount = parseInt(data.gitCommitCount) || 5;
+                        length += `\n\n# Git History (last ${commitCount} commits)\n${this._gitHistory}`.length;
+                    }
+
                     if (data.includeDb && this._dbStructure) {
                         length += `\n\n${this._dbStructure}`.length;
                     }
@@ -460,6 +486,18 @@ class PromptBuilderViewProvider implements vscode.WebviewViewProvider {
                 <button id="getDbStructureBtn" class="secondary">Get db structure</button>
                 <div id="dbStructureStatus" class="hint" style="margin-top: 8px;"></div>
             </div>
+
+            <div class="checkbox-container">
+                <input type="checkbox" id="includeGitHistory">
+                <label for="includeGitHistory">Git history</label>
+            </div>
+
+            <div id="gitHistorySettings" class="tree-settings hidden">
+                <label style="display: block; margin-bottom: 5px; font-weight: bold;">Number of last commits:</label>
+                <input type="text" id="gitCommitCount" value="5" style="width: 100%; padding: 4px; box-sizing: border-box; background: var(--vscode-input-background); color: var(--vscode-input-foreground); border: 1px solid var(--vscode-input-border); border-radius: 4px; margin-bottom: 10px;">
+                <button id="getGitHistoryBtn" class="secondary">Get git history</button>
+                <div id="gitHistoryStatus" class="hint" style="margin-top: 8px;"></div>
+            </div>
             
             <button id="copyBtn">Clipboard (<span id="charCountBadge">0</span> chars)</button>
 
@@ -470,6 +508,7 @@ class PromptBuilderViewProvider implements vscode.WebviewViewProvider {
                 let files = initialFiles || [];
                 const expandedFiles = new Set();
                 let selectedDbAliases = new Set();
+                let gitHistoryLoaded = false;
 
                 document.getElementById('systemPrompt').value = ${safeSystemPrompt};
                 document.getElementById('projectPrompt').value = ${safeProjectPrompt};
@@ -486,6 +525,12 @@ class PromptBuilderViewProvider implements vscode.WebviewViewProvider {
                 const dbConnListEl = document.getElementById('dbConnList');
                 const getDbStructureBtn = document.getElementById('getDbStructureBtn');
                 const dbStructureStatusEl = document.getElementById('dbStructureStatus');
+
+                const includeGitHistoryEl = document.getElementById('includeGitHistory');
+                const gitHistorySettingsEl = document.getElementById('gitHistorySettings');
+                const gitCommitCountEl = document.getElementById('gitCommitCount');
+                const getGitHistoryBtn = document.getElementById('getGitHistoryBtn');
+                const gitHistoryStatusEl = document.getElementById('gitHistoryStatus');
 
                 includeTreeEl.checked = !!initialTreeSettings.includeTree;
                 useGitignoreEl.checked = !!initialTreeSettings.useGitignore;
@@ -530,6 +575,29 @@ class PromptBuilderViewProvider implements vscode.WebviewViewProvider {
                         vscode.postMessage({ type: 'getDbAliases' });
                     }
                     requestCharCount();
+                });
+
+                includeGitHistoryEl.addEventListener('change', () => {
+                    gitHistorySettingsEl.classList.toggle('hidden', !includeGitHistoryEl.checked);
+                    requestCharCount();
+                });
+
+                gitCommitCountEl.addEventListener('input', (e) => {
+                    // Разрешаем ввод только цифр
+                    e.target.value = e.target.value.replace(/\\D/g, '');
+                    gitHistoryLoaded = false;
+                    gitHistoryStatusEl.textContent = '';
+                });
+
+                getGitHistoryBtn.addEventListener('click', () => {
+                    const commitCount = parseInt(gitCommitCountEl.value) || 5;
+                    if (commitCount <= 0) {
+                        gitHistoryStatusEl.textContent = 'Please enter a valid number of commits.';
+                        return;
+                    }
+                    gitHistoryStatusEl.textContent = 'Fetching...';
+                    getGitHistoryBtn.disabled = true;
+                    vscode.postMessage({ type: 'fetchGitHistory', commitCount: commitCount.toString() });
                 });
 
                 getDbStructureBtn.addEventListener('click', () => {
@@ -587,7 +655,9 @@ class PromptBuilderViewProvider implements vscode.WebviewViewProvider {
                         includeTree: includeTreeEl.checked,
                         useGitignore: useGitignoreEl.checked,
                         customIgnore: customIgnoreEl.value,
-                        includeDb: includeDbEl.checked
+                        includeDb: includeDbEl.checked,
+                        includeGitHistory: includeGitHistoryEl.checked && gitHistoryLoaded,
+                        gitCommitCount: gitCommitCountEl.value
                     });
                 }
 
@@ -605,7 +675,9 @@ class PromptBuilderViewProvider implements vscode.WebviewViewProvider {
                         includeTree: includeTreeEl.checked,
                         useGitignore: useGitignoreEl.checked,
                         customIgnore: customIgnoreEl.value,
-                        includeDb: includeDbEl.checked
+                        includeDb: includeDbEl.checked,
+                        includeGitHistory: includeGitHistoryEl.checked && gitHistoryLoaded,
+                        gitCommitCount: gitCommitCountEl.value
                     });
                 });
 
@@ -635,6 +707,17 @@ class PromptBuilderViewProvider implements vscode.WebviewViewProvider {
                         dbStructureStatusEl.textContent = '✅ DB structure fetched!';
                         getDbStructureBtn.disabled = false;
                         requestCharCount();
+                    } else if (message.type === 'gitStatus') {
+                        gitHistoryStatusEl.textContent = message.text;
+                    } else if (message.type === 'gitHistoryReady') {
+                        gitHistoryStatusEl.textContent = '✅ Git history fetched! (' + message.commitCount + ' commits)';
+                        getGitHistoryBtn.disabled = false;
+                        gitHistoryLoaded = true;
+                        requestCharCount();
+                    } else if (message.type === 'gitError') {
+                        gitHistoryStatusEl.textContent = '❌ Error: ' + message.error;
+                        getGitHistoryBtn.disabled = false;
+                        gitHistoryLoaded = false;
                     }
                 });
 
