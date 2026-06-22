@@ -48,6 +48,11 @@
         },
         {
           "type": "webview",
+          "id": "settingsView",
+          "name": "Settings view"
+        },
+        {
+          "type": "webview",
           "id": "logInterceptorView",
           "name": "Log Interceptor"
         }

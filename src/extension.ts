@@ -1,43 +1,77 @@
 import * as vscode from 'vscode';
+import { exec } from 'child_process';
+import { promisify } from 'util';
+import * as fs from 'fs';
+import * as path from 'path';
+import * as os from 'os';
 import { SystemPromptManager } from './sysPrompt';
 import { TreeManager, TreeOptions } from './tree';
 import { PayloadManager, FileInfo } from './payload';
 import { LogInterceptorViewProvider } from './logInterceptor';
+import { SettingsViewProvider } from './settingsView';
+
+const execAsync = promisify(exec);
+
+// Helper to find CLI tools on Windows if they are not in PATH
+function findCliTool(toolName: string): string {
+    if (os.platform() === 'win32') {
+        if (toolName === 'psql') {
+            const pgDir = 'C:\\Program Files\\PostgreSQL';
+            if (fs.existsSync(pgDir)) {
+                const versions = fs.readdirSync(pgDir).filter(v => v.match(/^\d+$/)).sort((a, b) => parseInt(b) - parseInt(a));
+                for (const v of versions) {
+                    const toolPath = path.join(pgDir, v, 'bin', 'psql.exe');
+                    if (fs.existsSync(toolPath)) {
+                        return `"${toolPath}"`;
+                    }
+                }
+            }
+        } else if (toolName === 'mysql') {
+            const myDir = 'C:\\Program Files\\MySQL';
+            if (fs.existsSync(myDir)) {
+                const versions = fs.readdirSync(myDir).filter(v => v.startsWith('MySQL Server')).sort().reverse();
+                for (const v of versions) {
+                    const toolPath = path.join(myDir, v, 'bin', 'mysql.exe');
+                    if (fs.existsSync(toolPath)) {
+                        return `"${toolPath}"`;
+                    }
+                }
+            }
+        }
+    }
+    return toolName;
+}
 
 export function activate(context: vscode.ExtensionContext) {
     console.log('🚀 [МОЕ РАСШИРЕНИЕ] Функция activate() вызвана!');
 
     // --- Регистрация основной плашки Prompt Builder ---
     const provider = new PromptBuilderViewProvider(context);
-    
     const disposable = vscode.window.registerWebviewViewProvider(
         PromptBuilderViewProvider.viewType, 
         provider,
-        {
-            webviewOptions: {
-                retainContextWhenHidden: true
-            }
-        }
+        { webviewOptions: { retainContextWhenHidden: true } }
     );
-    
     context.subscriptions.push(disposable);
-    console.log('✅ [МОЕ РАСШИРЕНИЕ] Провайдер успешно зарегистрирован! viewType:', PromptBuilderViewProvider.viewType);
 
-    // --- Регистрация новой плашки Log Interceptor ---
+    // --- Регистрация плашки Settings view ---
+    const settingsProvider = new SettingsViewProvider(context);
+    const settingsDisposable = vscode.window.registerWebviewViewProvider(
+        SettingsViewProvider.viewType,
+        settingsProvider,
+        { webviewOptions: { retainContextWhenHidden: true } }
+    );
+    context.subscriptions.push(settingsDisposable);
+
+    // --- Регистрация плашки Log Interceptor ---
     const logProvider = new LogInterceptorViewProvider(context);
     const logDisposable = vscode.window.registerWebviewViewProvider(
         LogInterceptorViewProvider.viewType,
         logProvider,
-        {
-            webviewOptions: {
-                retainContextWhenHidden: true
-            }
-        }
+        { webviewOptions: { retainContextWhenHidden: true } }
     );
     context.subscriptions.push(logDisposable);
-    console.log('✅ [МОЕ РАСШИРЕНИЕ] Провайдер логов успешно зарегистрирован! viewType:', LogInterceptorViewProvider.viewType);
 }
-
 
 class PromptBuilderViewProvider implements vscode.WebviewViewProvider {
     public static readonly viewType = 'promptBuilderView';
@@ -45,6 +79,7 @@ class PromptBuilderViewProvider implements vscode.WebviewViewProvider {
     private sysPromptManager: SystemPromptManager;
     private treeManager: TreeManager;
     private payloadManager: PayloadManager;
+    private _dbStructure: string = '';
 
     constructor(private readonly context: vscode.ExtensionContext) {
         this.sysPromptManager = new SystemPromptManager(context);
@@ -60,7 +95,6 @@ class PromptBuilderViewProvider implements vscode.WebviewViewProvider {
         this._view = webviewView;
         webviewView.webview.options = { enableScripts: true };
 
-        // Восстанавливаем персистентное состояние
         await this.payloadManager.loadState();
         const savedUserText = await this.payloadManager.getUserText();
         const savedTreeSettings = await this.payloadManager.getTreeSettings();
@@ -70,15 +104,10 @@ class PromptBuilderViewProvider implements vscode.WebviewViewProvider {
         const projectPrompt = this.sysPromptManager.getProjectPrompt();
 
         webviewView.webview.html = this._getHtmlForWebview(
-            webviewView.webview,
-            systemPrompt,
-            projectPrompt,
-            savedUserText,
-            filesInfo,
-            savedTreeSettings
+            webviewView.webview, systemPrompt, projectPrompt,
+            savedUserText, filesInfo, savedTreeSettings
         );
 
-        // Принудительное сохранение при уничтожении webview (закрытие вкладки/VS Code)
         webviewView.onDidDispose(() => {
             this.payloadManager.flushSave().catch(e => 
                 console.error('[PromptBuilder] Ошибка сохранения при закрытии:', e)
@@ -89,10 +118,8 @@ class PromptBuilderViewProvider implements vscode.WebviewViewProvider {
             switch (data.type) {
                 case 'addFile':
                     const uris = await vscode.window.showOpenDialog({
-                        canSelectMany: true,
-                        openLabel: 'Добавить файлы',
-                        canSelectFiles: true,
-                        canSelectFolders: false
+                        canSelectMany: true, openLabel: 'Добавить файлы',
+                        canSelectFiles: true, canSelectFolders: false
                     });
                     if (uris) {
                         await this.payloadManager.addFiles(uris);
@@ -108,7 +135,7 @@ class PromptBuilderViewProvider implements vscode.WebviewViewProvider {
                     this._updateFileList();
                     break;
                 case 'compileAndCopy':
-                    const finalPrompt = await this.payloadManager.compileFullPrompt(
+                    let finalPrompt = await this.payloadManager.compileFullPrompt(
                         this.sysPromptManager.getSystemPrompt(),
                         this.sysPromptManager.getProjectPrompt(),
                         data.text,
@@ -119,6 +146,11 @@ class PromptBuilderViewProvider implements vscode.WebviewViewProvider {
                             getProjectTree: (opts) => this.treeManager.getProjectTree(opts)
                         }
                     );
+                    
+                    if (data.includeDb && this._dbStructure) {
+                        finalPrompt += `\n\n${this._dbStructure}`;
+                    }
+                    
                     await vscode.env.clipboard.writeText(finalPrompt.trim());
                     vscode.window.showInformationMessage('✅ Prompt is in clipboard!');
                     break;
@@ -141,7 +173,7 @@ class PromptBuilderViewProvider implements vscode.WebviewViewProvider {
                     });
                     break;
                 case 'requestCharCount':
-                    const length = await this.payloadManager.getCompiledPromptLength(
+                    let length = await this.payloadManager.getCompiledPromptLength(
                         this.sysPromptManager.getSystemPrompt(),
                         this.sysPromptManager.getProjectPrompt(),
                         data.userText || '',
@@ -152,7 +184,47 @@ class PromptBuilderViewProvider implements vscode.WebviewViewProvider {
                             getProjectTree: (opts) => this.treeManager.getProjectTree(opts)
                         }
                     );
+                    if (data.includeDb && this._dbStructure) {
+                        length += `\n\n${this._dbStructure}`.length;
+                    }
                     this._view?.webview.postMessage({ type: 'updateCharCount', charCount: length });
+                    break;
+                case 'getDbAliases':
+                    const aliases = this.context.globalState.get<string[]>('dbConnectionAliases', []);
+                    this._view?.webview.postMessage({ type: 'dbAliases', aliases });
+                    break;
+                case 'fetchDbStructure':
+                    const selectedAliases: string[] = data.aliases;
+                    this._view?.webview.postMessage({ type: 'dbStatus', text: 'Fetching DB structure...' });
+                    this._dbStructure = '';
+                    
+                    let fullStructure = '';
+                    for (const alias of selectedAliases) {
+                        const connStr = await this.context.secrets.get(`dbConn_${alias}`);
+                        if (!connStr) {
+                            fullStructure += `${alias}\n     (Connection string not found)\n\n`;
+                            continue;
+                        }
+                        
+                        const dbType = connStr.split('://')[0];
+                        const toolName = dbType === 'postgres' || dbType === 'postgresql' ? 'psql' : dbType === 'mysql' ? 'mysql' : 'sqlite3';
+                        
+                        try {
+                            const schema = await this._fetchSchema(connStr);
+                            fullStructure += `${alias}\n${schema}\n\n`;
+                        } catch (err: any) {
+                            let errMsg = err.message || 'Unknown error';
+                            // Clean up mojibake from Windows console
+                            errMsg = errMsg.replace(/[^\x00-\x7F]/g, ' ').replace(/\s+/g, ' ').trim();
+                            if (errMsg.toLowerCase().includes('not recognized') || errMsg.toLowerCase().includes('not found') || errMsg.length < 10) {
+                                errMsg = `Command '${toolName}' not found. Please ensure the CLI tool is installed and added to system PATH, or installed in the default directory.`;
+                            }
+                            fullStructure += `${alias}\n     (Error: ${errMsg})\n\n`;
+                        }
+                    }
+                    
+                    this._dbStructure = fullStructure.trim();
+                    this._view?.webview.postMessage({ type: 'dbStructureReady' });
                     break;
             }
         });
@@ -160,22 +232,88 @@ class PromptBuilderViewProvider implements vscode.WebviewViewProvider {
         this._updateFileList();
     }
 
+    private async _fetchSchema(connStr: string): Promise<string> {
+        let cmd = '';
+        let dbType = '';
+        let toolName = '';
+        
+        if (connStr.startsWith('postgres://') || connStr.startsWith('postgresql://')) {
+            dbType = 'postgres';
+            toolName = 'psql';
+            const query = "SELECT table_name, column_name, data_type FROM information_schema.columns WHERE table_schema='public' ORDER BY table_name, ordinal_position;";
+            cmd = `${findCliTool(toolName)} "${connStr}" -t -A -F"|" -c "${query}"`;
+        } else if (connStr.startsWith('mysql://')) {
+            dbType = 'mysql';
+            toolName = 'mysql';
+            const query = "SELECT table_name, column_name, column_type FROM information_schema.columns WHERE table_schema=DATABASE() ORDER BY table_name, ordinal_position;";
+            cmd = `${findCliTool(toolName)} "${connStr}" -N -B -e "${query}"`;
+        } else if (connStr.startsWith('sqlite://')) {
+            dbType = 'sqlite';
+            toolName = 'sqlite3';
+            let filePath = connStr.replace(/^sqlite:\/\//, '');
+            if (filePath.match(/^\/[A-Za-z]:\//)) {
+                filePath = filePath.substring(1);
+            }
+            const query = "SELECT m.name, p.name, p.type FROM sqlite_master m JOIN pragma_table_info(m.name) p WHERE m.type='table' AND m.name NOT LIKE 'sqlite_%' ORDER BY m.name, p.cid;";
+            cmd = `${findCliTool(toolName)} "${filePath}" "${query}"`;
+        } else {
+            throw new Error('Unsupported DB type. Use postgres://, mysql://, or sqlite://');
+        }
+
+        const { stdout, stderr } = await execAsync(cmd, { maxBuffer: 1024 * 1024 * 10, windowsHide: true });
+        
+        if (stderr && dbType !== 'sqlite') {
+            const cleanStderr = stderr.replace(/[^\x00-\x7F]/g, ' ').replace(/\s+/g, ' ').trim();
+            if (cleanStderr.toLowerCase().includes('error') || cleanStderr.toLowerCase().includes('not recognized') || cleanStderr.toLowerCase().includes('not found')) {
+                throw new Error(cleanStderr || 'Command failed');
+            }
+        }
+
+        return this._parseSchemaOutput(stdout, dbType);
+    }
+
+    private _parseSchemaOutput(output: string, dbType: string): string {
+        const tables: { [key: string]: string[] } = {};
+        const lines = output.split('\n').filter(line => line.trim().length > 0);
+        
+        for (const line of lines) {
+            let parts: string[] = [];
+            if (dbType === 'postgres' || dbType === 'sqlite') {
+                parts = line.split('|');
+            } else if (dbType === 'mysql') {
+                parts = line.split('\t');
+            }
+            
+            if (parts.length >= 3) {
+                const tableName = parts[0].trim();
+                const colName = parts[1].trim();
+                const colType = parts[2].trim();
+                
+                if (!tables[tableName]) {
+                    tables[tableName] = [];
+                }
+                tables[tableName].push(`${colName}: ${colType}`);
+            }
+        }
+        
+        let result = '';
+        for (const table in tables) {
+            result += `     ${table}(${tables[table].join(', ')})\n`;
+        }
+        
+        return result;
+    }
+
     private async _updateFileList() {
         if (this._view) {
             const filesInfo = await this.payloadManager.getFilesInfo();
-            this._view.webview.postMessage({ 
-                type: 'updateFiles', 
-                files: filesInfo
-            });
+            this._view.webview.postMessage({ type: 'updateFiles', files: filesInfo });
         }
     }
 
     private _getHtmlForWebview(
-        webview: vscode.Webview,
-        systemPrompt: string,
-        projectPrompt: string,
-        userText: string,
-        filesInfo: FileInfo[],
+        webview: vscode.Webview, systemPrompt: string, projectPrompt: string,
+        userText: string, filesInfo: FileInfo[],
         treeSettings: { includeTree: boolean; useGitignore: boolean; customIgnore: string }
     ) {
         const safeSystemPrompt = JSON.stringify(systemPrompt);
@@ -213,114 +351,26 @@ class PromptBuilderViewProvider implements vscode.WebviewViewProvider {
                     background: var(--vscode-list-hoverBackground); padding: 6px; border-radius: 4px; margin-bottom: 5px; font-size: 0.9em;
                     cursor: pointer;
                 }
-                .file-item.expanded {
-                    flex-direction: column;
-                    align-items: stretch;
-                }
-                .file-header {
-                    display: flex;
-                    justify-content: space-between;
-                    width: 100%;
-                    margin-bottom: 5px;
-                }
-                .symbol-item {
-                    display: flex;
-                    align-items: center;
-                    margin-left: 20px;
-                    padding: 4px 0;
-                    font-size: 0.85em;
-                }
-                .symbol-item input[type="checkbox"] {
-                    margin-right: 8px;
-                    flex-shrink: 0;
-                }
-                .symbol-item label {
-                    display: flex;
-                    align-items: center;
-                    cursor: pointer;
-                    flex: 1;
-                    min-width: 0;
-                }
-                .symbol-item .sym-name {
-                    overflow: hidden;
-                    text-overflow: ellipsis;
-                    white-space: nowrap;
-                }
-                .symbol-item .sym-detail {
-                    color: var(--vscode-descriptionForeground);
-                    margin-left: 4px;
-                    font-style: italic;
-                }
-
-                /* Бейджи типов символов */
+                .file-item.expanded { flex-direction: column; align-items: stretch; }
+                .file-header { display: flex; justify-content: space-between; width: 100%; margin-bottom: 5px; }
+                .symbol-item { display: flex; align-items: center; margin-left: 20px; padding: 4px 0; font-size: 0.85em; }
+                .symbol-item input[type="checkbox"] { margin-right: 8px; flex-shrink: 0; }
+                .symbol-item label { display: flex; align-items: center; cursor: pointer; flex: 1; min-width: 0; }
+                .symbol-item .sym-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+                .symbol-item .sym-detail { color: var(--vscode-descriptionForeground); margin-left: 4px; font-style: italic; }
                 .sym-badge {
-                    display: inline-flex;
-                    align-items: center;
-                    justify-content: center;
-                    width: 18px;
-                    height: 18px;
-                    border-radius: 3px;
-                    font-size: 10px;
-                    font-weight: bold;
-                    margin-right: 6px;
-                    font-family: var(--vscode-editor-font-family, monospace);
-                    flex-shrink: 0;
-                    line-height: 1;
-                    box-sizing: border-box;
+                    display: inline-flex; align-items: center; justify-content: center;
+                    width: 18px; height: 18px; border-radius: 3px; font-size: 10px; font-weight: bold;
+                    margin-right: 6px; font-family: var(--vscode-editor-font-family, monospace);
+                    flex-shrink: 0; line-height: 1; box-sizing: border-box;
                 }
-                /* Классы / интерфейсы / структуры / конструкторы — бирюзовый */
-                .sym-kind-class,
-                .sym-kind-interface,
-                .sym-kind-struct,
-                .sym-kind-constructor,
-                .sym-kind-type-parameter {
-                    background: rgba(78, 201, 176, 0.15);
-                    color: #4ec9b0;
-                    border: 1px solid rgba(78, 201, 176, 0.6);
-                }
-                /* Методы / функции — жёлтый */
-                .sym-kind-method,
-                .sym-kind-function {
-                    background: rgba(220, 220, 170, 0.15);
-                    color: #dcdcaa;
-                    border: 1px solid rgba(220, 220, 170, 0.6);
-                }
-                /* Свойства / поля — голубой */
-                .sym-kind-property,
-                .sym-kind-field {
-                    background: rgba(156, 220, 254, 0.15);
-                    color: #9cdcfe;
-                    border: 1px solid rgba(156, 220, 254, 0.6);
-                }
-                /* Перечисления / элементы enum / события — оранжевый */
-                .sym-kind-enum,
-                .sym-kind-enum-member,
-                .sym-kind-event {
-                    background: rgba(206, 145, 120, 0.15);
-                    color: #ce9178;
-                    border: 1px solid rgba(206, 145, 120, 0.6);
-                }
-                /* Модули / namespace / пакеты — фиолетовый */
-                .sym-kind-module,
-                .sym-kind-namespace,
-                .sym-kind-package {
-                    background: rgba(197, 134, 192, 0.15);
-                    color: #c586c0;
-                    border: 1px solid rgba(197, 134, 192, 0.6);
-                }
-                /* Константы — светло-голубой */
-                .sym-kind-constant {
-                    background: rgba(79, 193, 255, 0.15);
-                    color: #4fc1ff;
-                    border: 1px solid rgba(79, 193, 255, 0.6);
-                }
-                /* Файл — серый */
-                .sym-kind-file {
-                    background: rgba(200, 200, 200, 0.15);
-                    color: #c8c8c8;
-                    border: 1px solid rgba(200, 200, 200, 0.6);
-                }
-
+                .sym-kind-class, .sym-kind-interface, .sym-kind-struct, .sym-kind-constructor, .sym-kind-type-parameter { background: rgba(78, 201, 176, 0.15); color: #4ec9b0; border: 1px solid rgba(78, 201, 176, 0.6); }
+                .sym-kind-method, .sym-kind-function { background: rgba(220, 220, 170, 0.15); color: #dcdcaa; border: 1px solid rgba(220, 220, 170, 0.6); }
+                .sym-kind-property, .sym-kind-field { background: rgba(156, 220, 254, 0.15); color: #9cdcfe; border: 1px solid rgba(156, 220, 254, 0.6); }
+                .sym-kind-enum, .sym-kind-enum-member, .sym-kind-event { background: rgba(206, 145, 120, 0.15); color: #ce9178; border: 1px solid rgba(206, 145, 120, 0.6); }
+                .sym-kind-module, .sym-kind-namespace, .sym-kind-package { background: rgba(197, 134, 192, 0.15); color: #c586c0; border: 1px solid rgba(197, 134, 192, 0.6); }
+                .sym-kind-constant { background: rgba(79, 193, 255, 0.15); color: #4fc1ff; border: 1px solid rgba(79, 193, 255, 0.6); }
+                .sym-kind-file { background: rgba(200, 200, 200, 0.15); color: #c8c8c8; border: 1px solid rgba(200, 200, 200, 0.6); }
                 .remove-btn { background: transparent; color: var(--vscode-errorForeground); width: auto; padding: 2px 6px; margin: 0; }
                 .remove-btn:hover { background: var(--vscode-list-activeSelectionBackground); }
                 #fileList { margin-bottom: 15px; max-height: 200px; overflow-y: auto; }
@@ -377,22 +427,31 @@ class PromptBuilderViewProvider implements vscode.WebviewViewProvider {
                     <input type="checkbox" id="useGitignore">
                     <label for="useGitignore">Use .gitignore</label>
                 </div>
-
                 <label style="display: block; margin-bottom: 5px; font-weight: bold;">Alternative ignore-file:</label>
                 <div class="hint">.gitignore-like text. Not persisted.</div>
                 <textarea id="customIgnore" class="ignore" placeholder="node_modules&#10;dist&#10;*.log&#10;.env"></textarea>
+            </div>
+
+            <div class="checkbox-container">
+                <input type="checkbox" id="includeDb">
+                <label for="includeDb">DB structure</label>
+            </div>
+
+            <div id="dbSettings" class="tree-settings hidden">
+                <div id="dbConnList" style="margin-bottom: 10px; max-height: 150px; overflow-y: auto;"></div>
+                <button id="getDbStructureBtn" class="secondary">Get db structure</button>
+                <div id="dbStructureStatus" class="hint" style="margin-top: 8px;"></div>
             </div>
             
             <button id="copyBtn">Clipboard (<span id="charCountBadge">0</span> chars)</button>
 
             <script>
                 const vscode = acquireVsCodeApi();
-                
-                // Начальное состояние из extension (восстановлено из workspaceState)
                 const initialFiles = ${safeFilesInfo};
                 const initialTreeSettings = ${safeTreeSettings};
                 let files = initialFiles || [];
                 const expandedFiles = new Set();
+                let selectedDbAliases = new Set();
 
                 document.getElementById('systemPrompt').value = ${safeSystemPrompt};
                 document.getElementById('projectPrompt').value = ${safeProjectPrompt};
@@ -403,20 +462,20 @@ class PromptBuilderViewProvider implements vscode.WebviewViewProvider {
                 const customIgnoreEl = document.getElementById('customIgnore');
                 const treeSettingsEl = document.getElementById('treeSettings');
                 const charCountBadge = document.getElementById('charCountBadge');
+                
+                const includeDbEl = document.getElementById('includeDb');
+                const dbSettingsEl = document.getElementById('dbSettings');
+                const dbConnListEl = document.getElementById('dbConnList');
+                const getDbStructureBtn = document.getElementById('getDbStructureBtn');
+                const dbStructureStatusEl = document.getElementById('dbStructureStatus');
 
-                // Восстанавливаем настройки дерева из сохранённого состояния
                 includeTreeEl.checked = !!initialTreeSettings.includeTree;
                 useGitignoreEl.checked = !!initialTreeSettings.useGitignore;
                 customIgnoreEl.value = initialTreeSettings.customIgnore || '';
 
                 function updateTreeSettingsVisibility() {
-                    if (includeTreeEl.checked) {
-                        treeSettingsEl.classList.remove('hidden');
-                    } else {
-                        treeSettingsEl.classList.add('hidden');
-                    }
+                    treeSettingsEl.classList.toggle('hidden', !includeTreeEl.checked);
                 }
-
                 function updateCustomIgnoreState() {
                     if (useGitignoreEl.checked) {
                         customIgnoreEl.classList.add('disabled');
@@ -427,11 +486,9 @@ class PromptBuilderViewProvider implements vscode.WebviewViewProvider {
                     }
                 }
 
-                // Применяем начальную видимость и состояние ignore
                 updateTreeSettingsVisibility();
                 updateCustomIgnoreState();
 
-                // Debounce для сохранения настроек дерева
                 let treeSettingsTimer = null;
                 function saveTreeSettingsDebounced() {
                     if (treeSettingsTimer) clearTimeout(treeSettingsTimer);
@@ -445,22 +502,60 @@ class PromptBuilderViewProvider implements vscode.WebviewViewProvider {
                     }, 400);
                 }
 
-                includeTreeEl.addEventListener('change', () => {
-                    updateTreeSettingsVisibility();
-                    saveTreeSettingsDebounced();
+                includeTreeEl.addEventListener('change', () => { updateTreeSettingsVisibility(); saveTreeSettingsDebounced(); requestCharCount(); });
+                useGitignoreEl.addEventListener('change', () => { updateCustomIgnoreState(); saveTreeSettingsDebounced(); requestCharCount(); });
+                customIgnoreEl.addEventListener('input', () => { saveTreeSettingsDebounced(); requestCharCountDebounced(); });
+
+                includeDbEl.addEventListener('change', () => {
+                    dbSettingsEl.classList.toggle('hidden', !includeDbEl.checked);
+                    if (includeDbEl.checked) {
+                        vscode.postMessage({ type: 'getDbAliases' });
+                    }
                     requestCharCount();
-                });
-                useGitignoreEl.addEventListener('change', () => {
-                    updateCustomIgnoreState();
-                    saveTreeSettingsDebounced();
-                    requestCharCount();
-                });
-                customIgnoreEl.addEventListener('input', () => {
-                    saveTreeSettingsDebounced();
-                    requestCharCountDebounced();
                 });
 
-                // Debounce для текстовых полей
+                getDbStructureBtn.addEventListener('click', () => {
+                    const selected = Array.from(selectedDbAliases);
+                    if (selected.length === 0) {
+                        dbStructureStatusEl.textContent = 'Please select at least one connection.';
+                        return;
+                    }
+                    dbStructureStatusEl.textContent = 'Fetching...';
+                    getDbStructureBtn.disabled = true;
+                    vscode.postMessage({ type: 'fetchDbStructure', aliases: selected });
+                });
+
+                function renderDbAliases(aliases) {
+                    dbConnListEl.innerHTML = '';
+                    if (aliases.length === 0) {
+                        dbConnListEl.innerHTML = '<div class="hint">No connections saved. Add them in Settings view.</div>';
+                        return;
+                    }
+                    aliases.forEach(alias => {
+                        const div = document.createElement('div');
+                        div.className = 'checkbox-container';
+                        div.style.marginBottom = '4px';
+                        div.style.padding = '4px';
+                        
+                        const checkbox = document.createElement('input');
+                        checkbox.type = 'checkbox';
+                        checkbox.id = 'db-' + alias;
+                        checkbox.checked = selectedDbAliases.has(alias);
+                        checkbox.onchange = () => {
+                            if (checkbox.checked) selectedDbAliases.add(alias);
+                            else selectedDbAliases.delete(alias);
+                        };
+                        
+                        const label = document.createElement('label');
+                        label.htmlFor = 'db-' + alias;
+                        label.textContent = alias;
+                        
+                        div.appendChild(checkbox);
+                        div.appendChild(label);
+                        dbConnListEl.appendChild(div);
+                    });
+                }
+
                 let charCountTimer = null;
                 function requestCharCountDebounced() {
                     if (charCountTimer) clearTimeout(charCountTimer);
@@ -473,46 +568,36 @@ class PromptBuilderViewProvider implements vscode.WebviewViewProvider {
                         userText: document.getElementById('userText').value,
                         includeTree: includeTreeEl.checked,
                         useGitignore: useGitignoreEl.checked,
-                        customIgnore: customIgnoreEl.value
+                        customIgnore: customIgnoreEl.value,
+                        includeDb: includeDbEl.checked
                     });
                 }
 
-                // Слушатели изменений для обновления счётчика и сохранения userText
                 document.getElementById('userText').addEventListener('input', () => {
                     requestCharCountDebounced();
-                    vscode.postMessage({ 
-                        type: 'saveUserText', 
-                        text: document.getElementById('userText').value 
-                    });
+                    vscode.postMessage({ type: 'saveUserText', text: document.getElementById('userText').value });
                 });
 
-                document.getElementById('addFileBtn').addEventListener('click', () => {
-                    vscode.postMessage({ type: 'addFile' });
-                });
+                document.getElementById('addFileBtn').addEventListener('click', () => vscode.postMessage({ type: 'addFile' }));
 
                 document.getElementById('copyBtn').addEventListener('click', () => {
-                    const text = document.getElementById('userText').value;
-                    const includeTree = includeTreeEl.checked;
-                    const useGitignore = useGitignoreEl.checked;
-                    const customIgnore = customIgnoreEl.value;
                     vscode.postMessage({ 
                         type: 'compileAndCopy', 
-                        text: text, 
-                        includeTree: includeTree,
-                        useGitignore: useGitignore,
-                        customIgnore: customIgnore
+                        text: document.getElementById('userText').value, 
+                        includeTree: includeTreeEl.checked,
+                        useGitignore: useGitignoreEl.checked,
+                        customIgnore: customIgnoreEl.value,
+                        includeDb: includeDbEl.checked
                     });
                 });
 
                 document.getElementById('saveSystemPromptBtn').addEventListener('click', () => {
-                    const prompt = document.getElementById('systemPrompt').value;
-                    vscode.postMessage({ type: 'saveSystemPrompt', prompt: prompt });
+                    vscode.postMessage({ type: 'saveSystemPrompt', prompt: document.getElementById('systemPrompt').value });
                     requestCharCount();
                 });
 
                 document.getElementById('saveProjectPromptBtn').addEventListener('click', () => {
-                    const prompt = document.getElementById('projectPrompt').value;
-                    vscode.postMessage({ type: 'saveProjectPrompt', prompt: prompt });
+                    vscode.postMessage({ type: 'saveProjectPrompt', prompt: document.getElementById('projectPrompt').value });
                     requestCharCount();
                 });
 
@@ -524,6 +609,14 @@ class PromptBuilderViewProvider implements vscode.WebviewViewProvider {
                         requestCharCount();
                     } else if (message.type === 'updateCharCount') {
                         charCountBadge.textContent = (message.charCount || 0).toLocaleString();
+                    } else if (message.type === 'dbAliases') {
+                        renderDbAliases(message.aliases || []);
+                    } else if (message.type === 'dbStatus') {
+                        dbStructureStatusEl.textContent = message.text;
+                    } else if (message.type === 'dbStructureReady') {
+                        dbStructureStatusEl.textContent = '✅ DB structure fetched!';
+                        getDbStructureBtn.disabled = false;
+                        requestCharCount();
                     }
                 });
 
@@ -542,26 +635,12 @@ class PromptBuilderViewProvider implements vscode.WebviewViewProvider {
                 }
 
                 function getSymbolLetter(kindName) {
-                    const map = {
-                        'Класс': 'C', 'Интерфейс': 'I', 'Метод': 'M', 'Функция': 'F',
-                        'Свойство': 'P', 'Поле': 'F', 'Конструктор': 'C', 'Перечисление': 'E',
-                        'Элемент перечисления': 'e', 'Модуль': 'M', 'Пространство имен': 'N',
-                        'Пакет': 'P', 'Константа': 'K', 'Структура': 'S', 'Событие': 'E',
-                        'Параметр типа': 'T', 'Файл': 'F', 'Оператор': 'O'
-                    };
+                    const map = { 'Класс': 'C', 'Интерфейс': 'I', 'Метод': 'M', 'Функция': 'F', 'Свойство': 'P', 'Поле': 'F', 'Конструктор': 'C', 'Перечисление': 'E', 'Элемент перечисления': 'e', 'Модуль': 'M', 'Пространство имен': 'N', 'Пакет': 'P', 'Константа': 'K', 'Структура': 'S', 'Событие': 'E', 'Параметр типа': 'T', 'Файл': 'F', 'Оператор': 'O' };
                     return map[kindName] || '?';
                 }
 
                 function getSymbolKindClass(kindName) {
-                    const map = {
-                        'Класс': 'class', 'Интерфейс': 'interface', 'Метод': 'method',
-                        'Функция': 'function', 'Свойство': 'property', 'Поле': 'field',
-                        'Конструктор': 'constructor', 'Перечисление': 'enum',
-                        'Элемент перечисления': 'enum-member', 'Модуль': 'module',
-                        'Пространство имен': 'namespace', 'Пакет': 'package',
-                        'Константа': 'constant', 'Структура': 'struct', 'Событие': 'event',
-                        'Параметр типа': 'type-parameter', 'Файл': 'file', 'Оператор': 'operator'
-                    };
+                    const map = { 'Класс': 'class', 'Интерфейс': 'interface', 'Метод': 'method', 'Функция': 'function', 'Свойство': 'property', 'Поле': 'field', 'Конструктор': 'constructor', 'Перечисление': 'enum', 'Элемент перечисления': 'enum-member', 'Модуль': 'module', 'Пространство имен': 'namespace', 'Пакет': 'package', 'Константа': 'constant', 'Структура': 'struct', 'Событие': 'event', 'Параметр типа': 'type-parameter', 'Файл': 'file', 'Оператор': 'operator' };
                     return map[kindName] || 'unknown';
                 }
 
@@ -578,34 +657,20 @@ class PromptBuilderViewProvider implements vscode.WebviewViewProvider {
                     symbols.forEach(symbol => {
                         const symbolDiv = document.createElement('div');
                         symbolDiv.className = 'symbol-item';
-                        
                         const checkbox = document.createElement('input');
                         checkbox.type = 'checkbox';
                         checkbox.id = 'sym-' + symbol.id;
                         checkbox.checked = states[symbol.id] !== false;
-                        checkbox.onchange = () => {
-                            vscode.postMessage({ 
-                                type: 'toggleSymbol', 
-                                uri: fileUri, 
-                                symbolId: symbol.id 
-                            });
-                        };
-                        
+                        checkbox.onchange = () => vscode.postMessage({ type: 'toggleSymbol', uri: fileUri, symbolId: symbol.id });
                         const label = document.createElement('label');
                         label.htmlFor = 'sym-' + symbol.id;
-
                         const letter = getSymbolLetter(symbol.kindName);
                         const kindClass = getSymbolKindClass(symbol.kindName);
                         const badge = '<span class="sym-badge sym-kind-' + kindClass + '">' + letter + '</span>';
-
-                        label.innerHTML = badge
-                            + '<span class="sym-name">' + escapeHtml(symbol.name) + '</span>'
-                            + (symbol.detail ? '<span class="sym-detail">: ' + escapeHtml(symbol.detail) + '</span>' : '');
-                        
+                        label.innerHTML = badge + '<span class="sym-name">' + escapeHtml(symbol.name) + '</span>' + (symbol.detail ? '<span class="sym-detail">: ' + escapeHtml(symbol.detail) + '</span>' : '');
                         symbolDiv.appendChild(checkbox);
                         symbolDiv.appendChild(label);
                         list.appendChild(symbolDiv);
-                        
                         if (symbol.children && symbol.children.length > 0) {
                             const childContainer = document.createElement('div');
                             renderSymbols(childContainer, symbol.children, fileUri, states, depth + 1);
@@ -621,11 +686,9 @@ class PromptBuilderViewProvider implements vscode.WebviewViewProvider {
                     files.forEach(file => {
                         const div = document.createElement('div');
                         div.className = 'file-item';
-                        
                         const header = document.createElement('div');
                         header.className = 'file-header';
                         header.innerHTML = '<span>📄 ' + escapeHtml(file.name) + '</span>';
-                        
                         const removeBtn = document.createElement('button');
                         removeBtn.className = 'remove-btn';
                         removeBtn.innerText = '✕';
@@ -634,32 +697,25 @@ class PromptBuilderViewProvider implements vscode.WebviewViewProvider {
                             expandedFiles.delete(file.uri);
                             vscode.postMessage({ type: 'removeFile', uri: file.uri });
                         };
-                        
                         header.appendChild(removeBtn);
                         div.appendChild(header);
-                        
                         const symbolsContainer = document.createElement('div');
                         symbolsContainer.className = 'symbols-container';
                         div.appendChild(symbolsContainer);
-                        
                         if (expandedFiles.has(file.uri)) {
                             div.classList.add('expanded');
                             renderSymbols(symbolsContainer, file.symbols, file.uri, file.states);
                         }
-                        
                         div.onclick = (e) => {
                             if (!e.target.closest('.remove-btn') && !e.target.closest('.symbols-container')) {
                                 toggleFile(div, file);
                             }
                         };
-                        
                         list.appendChild(div);
                     });
                 }
 
-                // Первичный рендер файлов из начального состояния
                 renderFiles();
-                // Первичный запрос счётчика
                 requestCharCount();
             </script>
         </body>
