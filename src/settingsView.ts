@@ -60,7 +60,6 @@ export class SettingsViewProvider implements vscode.WebviewViewProvider {
         await this.context.secrets.store(`dbConn_${alias}`, connStr);
         vscode.window.showInformationMessage('Connection added!');
         
-        // FIX: Update the list in the webview after adding
         await this._updateList();
     }
 
@@ -87,7 +86,6 @@ export class SettingsViewProvider implements vscode.WebviewViewProvider {
             await this.context.secrets.delete(`dbConn_${alias}`);
             vscode.window.showInformationMessage('Connection deleted!');
             
-            // FIX: Update the list in the webview after deleting
             await this._updateList();
         }
     }
@@ -143,6 +141,7 @@ export class SettingsViewProvider implements vscode.WebviewViewProvider {
             <div class="examples">
 <b>PostgreSQL:</b>
 postgres://user:password@localhost:5432/mydb
+postgres://user:password@localhost:5432/mydb?schema=myschema
 
 <b>MySQL:</b>
 mysql://user:password@localhost:3306/mydb
@@ -203,7 +202,6 @@ sqlite:///home/user/project/database.sqlite
                     }
                 });
 
-                // Initial request
                 vscode.postMessage({ type: 'requestList' });
             </script>
         </body>

@@ -12,7 +12,6 @@ import { SettingsViewProvider } from './settingsView';
 
 const execAsync = promisify(exec);
 
-// Helper to find CLI tools on Windows if they are not in PATH
 function findCliTool(toolName: string): string {
     if (os.platform() === 'win32') {
         if (toolName === 'psql') {
@@ -45,7 +44,6 @@ function findCliTool(toolName: string): string {
 export function activate(context: vscode.ExtensionContext) {
     console.log('🚀 [МОЕ РАСШИРЕНИЕ] Функция activate() вызвана!');
 
-    // --- Регистрация основной плашки Prompt Builder ---
     const provider = new PromptBuilderViewProvider(context);
     const disposable = vscode.window.registerWebviewViewProvider(
         PromptBuilderViewProvider.viewType, 
@@ -54,7 +52,6 @@ export function activate(context: vscode.ExtensionContext) {
     );
     context.subscriptions.push(disposable);
 
-    // --- Регистрация плашки Settings view ---
     const settingsProvider = new SettingsViewProvider(context);
     const settingsDisposable = vscode.window.registerWebviewViewProvider(
         SettingsViewProvider.viewType,
@@ -63,7 +60,6 @@ export function activate(context: vscode.ExtensionContext) {
     );
     context.subscriptions.push(settingsDisposable);
 
-    // --- Регистрация плашки Log Interceptor ---
     const logProvider = new LogInterceptorViewProvider(context);
     const logDisposable = vscode.window.registerWebviewViewProvider(
         LogInterceptorViewProvider.viewType,
@@ -214,7 +210,6 @@ class PromptBuilderViewProvider implements vscode.WebviewViewProvider {
                             fullStructure += `${alias}\n${schema}\n\n`;
                         } catch (err: any) {
                             let errMsg = err.message || 'Unknown error';
-                            // Clean up mojibake from Windows console
                             errMsg = errMsg.replace(/[^\x00-\x7F]/g, ' ').replace(/\s+/g, ' ').trim();
                             if (errMsg.toLowerCase().includes('not recognized') || errMsg.toLowerCase().includes('not found') || errMsg.length < 10) {
                                 errMsg = `Command '${toolName}' not found. Please ensure the CLI tool is installed and added to system PATH, or installed in the default directory.`;
@@ -240,8 +235,31 @@ class PromptBuilderViewProvider implements vscode.WebviewViewProvider {
         if (connStr.startsWith('postgres://') || connStr.startsWith('postgresql://')) {
             dbType = 'postgres';
             toolName = 'psql';
-            const query = "SELECT table_name, column_name, data_type FROM information_schema.columns WHERE table_schema='public' ORDER BY table_name, ordinal_position;";
-            cmd = `${findCliTool(toolName)} "${connStr}" -t -A -F"|" -c "${query}"`;
+            
+            let cleanUri = connStr;
+            let schema = 'current_schema()';
+
+            // Extract schema from URI parameters to avoid psql errors and use it in query
+            const schemaMatch = connStr.match(/[?&](schema|search_path|currentSchema)=([^&]+)/);
+            if (schemaMatch) {
+                schema = `'${decodeURIComponent(schemaMatch[2]).replace(/'/g, "''")}'`;
+                cleanUri = connStr.replace(new RegExp(`[?&]${schemaMatch[1]}=[^&]+`), '');
+                cleanUri = cleanUri.replace(/\?&/, '?').replace(/\?$/, '');
+            } else {
+                const optionsMatch = connStr.match(/[?&]options=([^&]+)/);
+                if (optionsMatch) {
+                    const options = decodeURIComponent(optionsMatch[1]);
+                    const searchPathMatch = options.match(/search_path[=\s]+(\w+)/);
+                    if (searchPathMatch) {
+                        schema = `'${searchPathMatch[1].replace(/'/g, "''")}'`;
+                    }
+                    cleanUri = connStr.replace(new RegExp(`[?&]options=[^&]+`), '');
+                    cleanUri = cleanUri.replace(/\?&/, '?').replace(/\?$/, '');
+                }
+            }
+
+            const query = `SELECT table_name, column_name, data_type FROM information_schema.columns WHERE table_schema=${schema} ORDER BY table_name, ordinal_position;`;
+            cmd = `${findCliTool(toolName)} "${cleanUri}" -t -A -F"|" -c "${query}"`;
         } else if (connStr.startsWith('mysql://')) {
             dbType = 'mysql';
             toolName = 'mysql';
