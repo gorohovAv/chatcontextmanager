@@ -2,17 +2,21 @@
 
 Barebones prompt constructor. Made to make life without full blown coding agents easier
 https://github.com/gorohovAv/chatcontextmanager
+https://marketplace.visualstudio.com/items?itemName=Eggplant11.chatcontextmanager
 
 ## Features
 
 - system and project prompts
 - project structure injection
 - full and partial file injection
+- database structure injecting
+- git history injecting
 - log intercepting
 
 ## Screenshots
 
-![Screenshot](./resources/myScreenFoPlugin.png)
+![Screenshot](./resources/1s.png)
+![Screenshot](./resources/2s.png)
 
 ### 1.0.0
 
