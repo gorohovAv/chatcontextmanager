@@ -100,10 +100,14 @@ class PromptBuilderViewProvider implements vscode.WebviewViewProvider {
 
         const systemPrompt = this.sysPromptManager.getSystemPrompt();
         const projectPrompt = this.sysPromptManager.getProjectPrompt();
+        const askPrompt = this.sysPromptManager.getAskPrompt();
+        const customPrompt = this.sysPromptManager.getCustomPrompt();
+        const currentMode = this.sysPromptManager.getCurrentMode();
 
         webviewView.webview.html = this._getHtmlForWebview(
             webviewView.webview, systemPrompt, projectPrompt,
-            savedUserText, filesInfo, savedTreeSettings
+            savedUserText, filesInfo, savedTreeSettings,
+            currentMode, askPrompt, customPrompt
         );
 
         webviewView.onDidDispose(() => {
@@ -147,7 +151,7 @@ class PromptBuilderViewProvider implements vscode.WebviewViewProvider {
                     break;
                 case 'compileAndCopy':
                     let finalPrompt = await this.payloadManager.compileFullPrompt(
-                        this.sysPromptManager.getSystemPrompt(),
+                        this.sysPromptManager.getActiveSystemPrompt(),
                         this.sysPromptManager.getProjectPrompt(),
                         data.text,
                         {
@@ -174,6 +178,17 @@ class PromptBuilderViewProvider implements vscode.WebviewViewProvider {
                     await this.sysPromptManager.setSystemPrompt(data.prompt);
                     vscode.window.showInformationMessage('✅ Global prompt is saved!');
                     break;
+                case 'saveAskPrompt':
+                    await this.sysPromptManager.setAskPrompt(data.prompt);
+                    vscode.window.showInformationMessage('✅ Ask prompt is saved!');
+                    break;
+                case 'saveCustomPrompt':
+                    await this.sysPromptManager.setCustomPrompt(data.prompt);
+                    vscode.window.showInformationMessage('✅ Custom prompt is saved!');
+                    break;
+                case 'setMode':
+                    await this.sysPromptManager.setCurrentMode(data.mode);
+                    break;
                 case 'saveProjectPrompt':
                     await this.sysPromptManager.setProjectPrompt(data.prompt);
                     vscode.window.showInformationMessage('✅ Project prompt is saved!');
@@ -190,7 +205,7 @@ class PromptBuilderViewProvider implements vscode.WebviewViewProvider {
                     break;
                 case 'requestCharCount':
                     let length = await this.payloadManager.getCompiledPromptLength(
-                        this.sysPromptManager.getSystemPrompt(),
+                        this.sysPromptManager.getActiveSystemPrompt(),
                         this.sysPromptManager.getProjectPrompt(),
                         data.userText || '',
                         {
@@ -358,13 +373,17 @@ class PromptBuilderViewProvider implements vscode.WebviewViewProvider {
     private _getHtmlForWebview(
         webview: vscode.Webview, systemPrompt: string, projectPrompt: string,
         userText: string, filesInfo: FileInfo[],
-        treeSettings: { includeTree: boolean; useGitignore: boolean; customIgnore: string }
+        treeSettings: { includeTree: boolean; useGitignore: boolean; customIgnore: string },
+        currentMode: string, askPrompt: string, customPrompt: string
     ) {
         const safeSystemPrompt = JSON.stringify(systemPrompt);
         const safeProjectPrompt = JSON.stringify(projectPrompt);
         const safeUserText = JSON.stringify(userText);
         const safeFilesInfo = JSON.stringify(filesInfo);
         const safeTreeSettings = JSON.stringify(treeSettings);
+        const safeAskPrompt = JSON.stringify(askPrompt);
+        const safeCustomPrompt = JSON.stringify(customPrompt);
+        const safeCurrentMode = JSON.stringify(currentMode);
 
         return `<!DOCTYPE html>
         <html lang="ru">
@@ -440,21 +459,65 @@ class PromptBuilderViewProvider implements vscode.WebviewViewProvider {
                 .tree-settings.hidden { display: none; }
                 .hint { font-size: 0.8em; color: var(--vscode-descriptionForeground); margin: 5px 0 8px 0; }
                 .disabled { opacity: 0.5; pointer-events: none; }
+                
+                .mode-switcher {
+                    display: flex;
+                    background: var(--vscode-input-background);
+                    border: 1px solid var(--vscode-input-border);
+                    border-radius: 6px;
+                    padding: 3px;
+                    margin-bottom: 10px;
+                }
+                .mode-btn {
+                    flex: 1;
+                    padding: 6px 10px;
+                    background: transparent;
+                    color: var(--vscode-foreground);
+                    border: none;
+                    border-radius: 4px;
+                    cursor: pointer;
+                    font-weight: normal;
+                    transition: background 0.2s, color 0.2s;
+                    margin: 0;
+                    font-size: 0.9em;
+                }
+                .mode-btn.active {
+                    background: var(--vscode-button-background);
+                    color: var(--vscode-button-foreground);
+                    font-weight: bold;
+                }
+                .mode-btn:hover:not(.active) {
+                    background: var(--vscode-list-hoverBackground);
+                }
             </style>
         </head>
         <body>
             <details>
                 <summary>Prompt settings</summary>
                 <div style="margin-top: 10px;">
-                    <label style="display: block; margin-bottom: 5px; font-weight: bold;">Global prompt:</label>
+                    <label style="display: block; margin-bottom: 5px; font-weight: bold;">Global prompt (Edit):</label>
                     <textarea id="systemPrompt" class="small" placeholder="Global prompt..."></textarea>
                     <button id="saveSystemPromptBtn" class="secondary">💾 Save global prompt</button>
                     
-                    <label style="display: block; margin-bottom: 5px; font-weight: bold;">Project prompt:</label>
+                    <label style="display: block; margin-bottom: 5px; font-weight: bold; margin-top: 15px;">Global prompt (Ask):</label>
+                    <textarea id="askPrompt" class="small" placeholder="Global prompt for Ask mode..."></textarea>
+                    <button id="saveAskPromptBtn" class="secondary">💾 Save ask prompt</button>
+
+                    <label style="display: block; margin-bottom: 5px; font-weight: bold; margin-top: 15px;">Global prompt (Custom):</label>
+                    <textarea id="customPrompt" class="small" placeholder="Global prompt for Custom mode..."></textarea>
+                    <button id="saveCustomPromptBtn" class="secondary">💾 Save custom prompt</button>
+
+                    <label style="display: block; margin-bottom: 5px; font-weight: bold; margin-top: 15px;">Project prompt:</label>
                     <textarea id="projectPrompt" class="small" placeholder="Local prompt for this particular project..."></textarea>
                     <button id="saveProjectPromptBtn" class="secondary">💾 Save project prompt</button>
                 </div>
             </details>
+
+            <div class="mode-switcher">
+                <button class="mode-btn" data-mode="edit">Edit</button>
+                <button class="mode-btn" data-mode="ask">Ask</button>
+                <button class="mode-btn" data-mode="custom">Custom</button>
+            </div>
 
             <textarea id="userText" placeholder="Enter your actual promt here..."></textarea>
             
@@ -505,6 +568,7 @@ class PromptBuilderViewProvider implements vscode.WebviewViewProvider {
                 const vscode = acquireVsCodeApi();
                 const initialFiles = ${safeFilesInfo};
                 const initialTreeSettings = ${safeTreeSettings};
+                const initialMode = ${safeCurrentMode};
                 let files = initialFiles || [];
                 const expandedFiles = new Set();
                 let selectedDbAliases = new Set();
@@ -513,6 +577,22 @@ class PromptBuilderViewProvider implements vscode.WebviewViewProvider {
                 document.getElementById('systemPrompt').value = ${safeSystemPrompt};
                 document.getElementById('projectPrompt').value = ${safeProjectPrompt};
                 document.getElementById('userText').value = ${safeUserText};
+                document.getElementById('askPrompt').value = ${safeAskPrompt};
+                document.getElementById('customPrompt').value = ${safeCustomPrompt};
+
+                // Mode switcher logic
+                const modeButtons = document.querySelectorAll('.mode-btn');
+                modeButtons.forEach(btn => {
+                    if (btn.dataset.mode === initialMode) {
+                        btn.classList.add('active');
+                    }
+                    btn.addEventListener('click', () => {
+                        modeButtons.forEach(b => b.classList.remove('active'));
+                        btn.classList.add('active');
+                        vscode.postMessage({ type: 'setMode', mode: btn.dataset.mode });
+                        requestCharCount();
+                    });
+                });
 
                 const includeTreeEl = document.getElementById('includeTree');
                 const useGitignoreEl = document.getElementById('useGitignore');
@@ -683,6 +763,16 @@ class PromptBuilderViewProvider implements vscode.WebviewViewProvider {
 
                 document.getElementById('saveSystemPromptBtn').addEventListener('click', () => {
                     vscode.postMessage({ type: 'saveSystemPrompt', prompt: document.getElementById('systemPrompt').value });
+                    requestCharCount();
+                });
+
+                document.getElementById('saveAskPromptBtn').addEventListener('click', () => {
+                    vscode.postMessage({ type: 'saveAskPrompt', prompt: document.getElementById('askPrompt').value });
+                    requestCharCount();
+                });
+
+                document.getElementById('saveCustomPromptBtn').addEventListener('click', () => {
+                    vscode.postMessage({ type: 'saveCustomPrompt', prompt: document.getElementById('customPrompt').value });
                     requestCharCount();
                 });
 
