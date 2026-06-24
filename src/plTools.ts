@@ -51,13 +51,15 @@ const LANGUAGE_PATTERNS: Record<string, PatternDef[]> = {
         { pattern: /^[ \t]*(pub[ \t]+)?impl[ \t]+(?:<[^>]*>[ \t]+)?(\w+)/gm, kind: vscode.SymbolKind.Class, nameGroup: 2 },
         { pattern: /^[ \t]*(pub[ \t]+)?mod[ \t]+(\w+)/gm, kind: vscode.SymbolKind.Module, nameGroup: 2 },
         { pattern: /^[ \t]*(pub[ \t]+)?type[ \t]+(\w+)/gm, kind: vscode.SymbolKind.Interface, nameGroup: 2 },
-        { pattern: /^[ \t]*(pub[ \t]+)?const[ \t]+(\w+)/gm, kind: vscode.SymbolKind.Constant, nameGroup: 2 },
+        // REMOVED: const pattern to exclude constants from structure
     ],
     javascript: [
         { pattern: /^[ \t]*(export[ \t]+)?(async[ \t]+)?function\*?[ \t]+(\w+)/gm, kind: vscode.SymbolKind.Function, nameGroup: 3 },
         { pattern: /^[ \t]*(export[ \t]+)?class[ \t]+(\w+)/gm, kind: vscode.SymbolKind.Class, nameGroup: 2 },
         { pattern: /^[ \t]*(export[ \t]+)?(const|let|var)[ \t]+(\w+)[ \t]*=[ \t]*(async[ \t]+)?\(/gm, kind: vscode.SymbolKind.Function, nameGroup: 3 },
         { pattern: /^[ \t]*(export[ \t]+)?(const|let|var)[ \t]+(\w+)[ \t]*=[ \t]*(async[ \t]+)?function/gm, kind: vscode.SymbolKind.Function, nameGroup: 3 },
+        // ADDED: Support for arrow functions (React components, helpers)
+        { pattern: /^[ \t]*(export[ \t]+)?(const|let|var)[ \t]+(\w+)[ \t]*=[ \t]*(async[ \t]+)?\([^)]*\)[ \t]*=>/gm, kind: vscode.SymbolKind.Function, nameGroup: 3 },
         { pattern: /^[ \t]*(async[ \t]+)?(\w+)[ \t]*\([^)]*\)[ \t]*\{/gm, kind: vscode.SymbolKind.Method, nameGroup: 2 },
     ],
     javascriptreact: [], // будет заполнено ниже
@@ -150,15 +152,21 @@ const LANGUAGE_PATTERNS: Record<string, PatternDef[]> = {
 };
 
 // Алиасы: копируем паттерны для связанных языков
-LANGUAGE_PATTERNS.javascriptreact = LANGUAGE_PATTERNS.javascript;
-LANGUAGE_PATTERNS.typescript = LANGUAGE_PATTERNS.javascript;
-LANGUAGE_PATTERNS.typescriptreact = LANGUAGE_PATTERNS.javascript;
-LANGUAGE_PATTERNS.cpp = LANGUAGE_PATTERNS.c;
-LANGUAGE_PATTERNS.scss = LANGUAGE_PATTERNS.css;
-LANGUAGE_PATTERNS.less = LANGUAGE_PATTERNS.css;
-LANGUAGE_PATTERNS.bash = LANGUAGE_PATTERNS.shellscript;
-LANGUAGE_PATTERNS.sh = LANGUAGE_PATTERNS.shellscript;
-LANGUAGE_PATTERNS.zsh = LANGUAGE_PATTERNS.shellscript;
+LANGUAGE_PATTERNS.javascriptreact = [...LANGUAGE_PATTERNS.javascript];
+LANGUAGE_PATTERNS.typescript = [
+    ...LANGUAGE_PATTERNS.javascript,
+    // ADDED: TypeScript-specific declarations
+    { pattern: /^[ \t]*(export[ \t]+)?interface[ \t]+(\w+)/gm, kind: vscode.SymbolKind.Interface, nameGroup: 2 },
+    { pattern: /^[ \t]*(export[ \t]+)?type[ \t]+(\w+)/gm, kind: vscode.SymbolKind.Interface, nameGroup: 2 },
+    { pattern: /^[ \t]*(export[ \t]+)?enum[ \t]+(\w+)/gm, kind: vscode.SymbolKind.Enum, nameGroup: 2 },
+];
+LANGUAGE_PATTERNS.typescriptreact = [...LANGUAGE_PATTERNS.typescript];
+LANGUAGE_PATTERNS.cpp = [...LANGUAGE_PATTERNS.c];
+LANGUAGE_PATTERNS.scss = [...LANGUAGE_PATTERNS.css];
+LANGUAGE_PATTERNS.less = [...LANGUAGE_PATTERNS.css];
+LANGUAGE_PATTERNS.bash = [...LANGUAGE_PATTERNS.shellscript];
+LANGUAGE_PATTERNS.sh = [...LANGUAGE_PATTERNS.shellscript];
+LANGUAGE_PATTERNS.zsh = [...LANGUAGE_PATTERNS.shellscript];
 
 /**
  * Преобразует offset в Position (строка, колонка).
