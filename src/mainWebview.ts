@@ -1,3 +1,4 @@
+// File: mainWebview.ts
 export function getMainWebview(safeSystemPrompt: string, safeProjectPrompt: string, safeUserText: string, safeFilesInfo: string, safeTreeSettings: string, safeAskPrompt: string, safeCustomPrompt: string, safeCurrentMode: string): string {
 
     return `<!DOCTYPE html>
@@ -127,6 +128,8 @@ export function getMainWebview(safeSystemPrompt: string, safeProjectPrompt: stri
                     <button id="saveProjectPromptBtn" class="secondary">💾 Save project prompt</button>
                 </div>
             </details>
+
+            <button id="clearBtn" class="secondary" style="margin-top: 10px;">🗑️ Clear form</button>
 
             <div class="mode-switcher">
                 <button class="mode-btn" data-mode="edit">Edit</button>
@@ -393,6 +396,41 @@ export function getMainWebview(safeSystemPrompt: string, safeProjectPrompt: stri
 
                 document.getElementById('saveProjectPromptBtn').addEventListener('click', () => {
                     vscode.postMessage({ type: 'saveProjectPrompt', prompt: document.getElementById('projectPrompt').value });
+                    requestCharCount();
+                });
+
+                document.getElementById('clearBtn').addEventListener('click', () => {
+                    // Clear user text
+                    document.getElementById('userText').value = '';
+                    vscode.postMessage({ type: 'saveUserText', text: '' });
+
+                    // Clear tree settings
+                    includeTreeEl.checked = false;
+                    updateTreeSettingsVisibility();
+                    useGitignoreEl.checked = false;
+                    customIgnoreEl.value = '';
+                    saveTreeSettingsDebounced();
+
+                    // Clear DB settings
+                    includeDbEl.checked = false;
+                    dbSettingsEl.classList.add('hidden');
+                    selectedDbAliases.clear();
+                    dbStructureStatusEl.textContent = '';
+                    dbConnListEl.innerHTML = '';
+
+                    // Clear Git history settings
+                    includeGitHistoryEl.checked = false;
+                    gitHistorySettingsEl.classList.add('hidden');
+                    gitHistoryStatusEl.textContent = '';
+                    gitHistoryLoaded = false;
+                    gitCommitCountEl.value = '5';
+
+                    // Clear files
+                    vscode.postMessage({ type: 'clearForm' });
+                    files = [];
+                    expandedFiles.clear();
+                    renderFiles();
+                    
                     requestCharCount();
                 });
 

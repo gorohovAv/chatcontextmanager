@@ -194,6 +194,16 @@ class PromptBuilderViewProvider implements vscode.WebviewViewProvider {
                     await this.sysPromptManager.setProjectPrompt(data.prompt);
                     vscode.window.showInformationMessage('✅ Project prompt is saved!');
                     break;
+                case 'clearForm': {
+                    const currentFiles = await this.payloadManager.getFilesInfo();
+                    for (const file of currentFiles) {
+                        await this.payloadManager.removeFile(vscode.Uri.parse(file.uri));
+                    }
+                    this._updateFileList();
+                    this._dbStructure = '';
+                    this._gitHistory = '';
+                    break;
+                }
                 case 'saveUserText':
                     await this.payloadManager.saveUserText(data.text);
                     break;
