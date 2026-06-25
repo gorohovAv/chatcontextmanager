@@ -2,7 +2,7 @@
   "name": "chatcontextmanager",
   "displayName": "Prompt scoop",
   "description": "Easily compile a prompt for any AI chat",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "publisher": "Eggplant11",
   "repository": {
     "type": "git",
