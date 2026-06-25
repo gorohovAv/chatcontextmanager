@@ -103,7 +103,7 @@ function convertSymbolInformation(symbol: vscode.SymbolInformation): SymbolNode 
 
 function filterSymbols(symbols: SymbolNode[]): SymbolNode[] {
     return symbols
-        .filter(s => s.kind !== vscode.SymbolKind.Variable)
+        .filter(s => s.kind !== vscode.SymbolKind.Variable && s.kind !== vscode.SymbolKind.Constant && s.kind !== vscode.SymbolKind.Object && s.kind !== vscode.SymbolKind.Field && s.kind !== vscode.SymbolKind.Boolean && s.kind !== vscode.SymbolKind.Enum && s.kind !== vscode.SymbolKind.String && s.kind !== vscode.SymbolKind.EnumMember)
         .map(s => ({
             ...s,
             children: filterSymbols(s.children)
@@ -441,6 +441,7 @@ export class PayloadManager {
             );
 
             // === Уровень 1: Document Symbol Provider (LSP) ===
+
             let documentSymbols = await vscode.commands.executeCommand<
                 (vscode.DocumentSymbol | vscode.SymbolInformation)[]
             >('vscode.executeDocumentSymbolProvider', uri);

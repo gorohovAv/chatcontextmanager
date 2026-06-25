@@ -15,7 +15,7 @@ https://marketplace.visualstudio.com/items?itemName=Eggplant11.chatcontextmanage
 
 ## Screenshots
 
-![Screenshot](./resources/1s.png)
+![Screenshot](./resources/3s.png)
 ![Screenshot](./resources/2s.png)
 
 
