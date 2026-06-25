@@ -1,4 +1,3 @@
-// File: mainWebview.ts
 export function getMainWebview(safeSystemPrompt: string, safeProjectPrompt: string, safeUserText: string, safeFilesInfo: string, safeTreeSettings: string, safeAskPrompt: string, safeCustomPrompt: string, safeCurrentMode: string): string {
 
     return `<!DOCTYPE html>
@@ -31,7 +30,7 @@ export function getMainWebview(safeSystemPrompt: string, safeProjectPrompt: stri
                     cursor: pointer;
                 }
                 .file-item.expanded { flex-direction: column; align-items: stretch; }
-                .file-header { display: flex; justify-content: space-between; width: 100%; margin-bottom: 5px; }
+                .file-header { display: flex; justify-content: space-between; width: 100%; margin-bottom: 5px; align-items: center; }
                 .symbol-item { display: flex; align-items: center; margin-left: 20px; padding: 4px 0; font-size: 0.85em; }
                 .symbol-item input[type="checkbox"] { margin-right: 8px; flex-shrink: 0; }
                 .symbol-item label { display: flex; align-items: center; cursor: pointer; flex: 1; min-width: 0; }
@@ -50,8 +49,9 @@ export function getMainWebview(safeSystemPrompt: string, safeProjectPrompt: stri
                 .sym-kind-module, .sym-kind-namespace, .sym-kind-package { background: rgba(197, 134, 192, 0.15); color: #c586c0; border: 1px solid rgba(197, 134, 192, 0.6); }
                 .sym-kind-constant { background: rgba(79, 193, 255, 0.15); color: #4fc1ff; border: 1px solid rgba(79, 193, 255, 0.6); }
                 .sym-kind-file { background: rgba(200, 200, 200, 0.15); color: #c8c8c8; border: 1px solid rgba(200, 200, 200, 0.6); }
-                .remove-btn { background: transparent; color: var(--vscode-errorForeground); width: auto; padding: 2px 6px; margin: 0; }
-                .remove-btn:hover { background: var(--vscode-list-activeSelectionBackground); }
+                .action-btn { background: transparent; width: auto; padding: 2px 6px; margin: 0; color: var(--vscode-foreground); border: none; cursor: pointer; }
+                .action-btn:hover { background: var(--vscode-list-activeSelectionBackground); }
+                .remove-btn { color: var(--vscode-errorForeground); }
                 #fileList { margin-bottom: 15px; max-height: 200px; overflow-y: auto; }
                 details { margin-bottom: 15px; }
                 summary { 
@@ -473,7 +473,7 @@ export function getMainWebview(safeSystemPrompt: string, safeProjectPrompt: stri
                     } else {
                         fileDiv.classList.add('expanded');
                         const symbolsContainer = fileDiv.querySelector('.symbols-container');
-                        renderSymbols(symbolsContainer, file.symbols, file.uri, file.states);
+                        renderSymbols(symbolsContainer, file.symbols, file.uri, file.states, file.charCount || 0);
                         expandedFiles.add(file.uri);
                     }
                 }
@@ -493,8 +493,16 @@ export function getMainWebview(safeSystemPrompt: string, safeProjectPrompt: stri
                     div.textContent = text;
                     return div.innerHTML;
                 }
+                
+                function getGradientColor(percent) {
+                    percent = Math.max(0, Math.min(100, percent));
+                    const hue = 120 - (percent * 1.2);
+                    const sat = 40 + (percent * 0.6);
+                    const light = 80 - (percent * 0.3);
+                    return 'hsl(' + Math.round(hue) + ', ' + Math.round(sat) + '%, ' + Math.round(light) + '%)';
+                }
 
-                function renderSymbols(container, symbols, fileUri, states, depth = 0) {
+                function renderSymbols(container, symbols, fileUri, states, fileCharCount, depth = 0) {
                     container.innerHTML = '';
                     const list = document.createElement('div');
                     list.style.paddingLeft = (depth * 15) + 'px';
@@ -511,17 +519,49 @@ export function getMainWebview(safeSystemPrompt: string, safeProjectPrompt: stri
                         const letter = getSymbolLetter(symbol.kindName);
                         const kindClass = getSymbolKindClass(symbol.kindName);
                         const badge = '<span class="sym-badge sym-kind-' + kindClass + '">' + letter + '</span>';
-                        label.innerHTML = badge + '<span class="sym-name">' + escapeHtml(symbol.name) + '</span>' + (symbol.detail ? '<span class="sym-detail">: ' + escapeHtml(symbol.detail) + '</span>' : '');
+                        
+                        let percentHtml = '';
+                        if (fileCharCount > 0 && typeof symbol.charCount === 'number') {
+                            const percent = (symbol.charCount / fileCharCount) * 100;
+                            const percentStr = percent.toFixed(0) + '%';
+                            const color = getGradientColor(percent);
+                            percentHtml = '<span style="margin-left: auto; padding-right: 8px; font-weight: bold; font-size: 0.85em; color: ' + color + '; flex-shrink: 0;">' + percentStr + '</span>';
+                        }
+                        
+                        label.innerHTML = badge + '<span class="sym-name">' + escapeHtml(symbol.name) + '</span>' + (symbol.detail ? '<span class="sym-detail">: ' + escapeHtml(symbol.detail) + '</span>' : '') + percentHtml;
                         symbolDiv.appendChild(checkbox);
                         symbolDiv.appendChild(label);
                         list.appendChild(symbolDiv);
                         if (symbol.children && symbol.children.length > 0) {
                             const childContainer = document.createElement('div');
-                            renderSymbols(childContainer, symbol.children, fileUri, states, depth + 1);
+                            renderSymbols(childContainer, symbol.children, fileUri, states, fileCharCount, depth + 1);
                             list.appendChild(childContainer);
                         }
                     });
                     container.appendChild(list);
+                }
+
+                function toggleAllSymbols(file) {
+                    let allUnchecked = true;
+                    function checkAllUnchecked(symbols) {
+                        for (const sym of symbols) {
+                            if (file.states[sym.id] !== false) {
+                                allUnchecked = false;
+                                return;
+                            }
+                            if (sym.children && sym.children.length > 0) {
+                                checkAllUnchecked(sym.children);
+                                if (!allUnchecked) return;
+                            }
+                        }
+                    }
+                    checkAllUnchecked(file.symbols || []);
+                    
+                    vscode.postMessage({ 
+                        type: 'setAllSymbols', 
+                        uri: file.uri, 
+                        checkAll: allUnchecked 
+                    });
                 }
 
                 function renderFiles() {
@@ -532,26 +572,48 @@ export function getMainWebview(safeSystemPrompt: string, safeProjectPrompt: stri
                         div.className = 'file-item';
                         const header = document.createElement('div');
                         header.className = 'file-header';
-                        header.innerHTML = '<span>📄 ' + escapeHtml(file.name) + '</span>';
+                        
+                        const nameSpan = document.createElement('span');
+                        nameSpan.innerHTML = '📄 ' + escapeHtml(file.name);
+                        header.appendChild(nameSpan);
+                        
+                        const actionsDiv = document.createElement('div');
+                        actionsDiv.style.display = 'flex';
+                        actionsDiv.style.gap = '5px';
+                        actionsDiv.style.alignItems = 'center';
+                        
+                        const toggleBtn = document.createElement('button');
+                        toggleBtn.className = 'action-btn';
+                        toggleBtn.innerHTML = '✔';
+                        toggleBtn.title = 'Toggle all symbols';
+                        toggleBtn.onclick = (e) => {
+                            e.stopPropagation();
+                            toggleAllSymbols(file);
+                        };
+                        
                         const removeBtn = document.createElement('button');
-                        removeBtn.className = 'remove-btn';
+                        removeBtn.className = 'action-btn remove-btn';
                         removeBtn.innerText = '✕';
                         removeBtn.onclick = (e) => {
                             e.stopPropagation();
                             expandedFiles.delete(file.uri);
                             vscode.postMessage({ type: 'removeFile', uri: file.uri });
                         };
-                        header.appendChild(removeBtn);
+                        
+                        actionsDiv.appendChild(toggleBtn);
+                        actionsDiv.appendChild(removeBtn);
+                        header.appendChild(actionsDiv);
+                        
                         div.appendChild(header);
                         const symbolsContainer = document.createElement('div');
                         symbolsContainer.className = 'symbols-container';
                         div.appendChild(symbolsContainer);
                         if (expandedFiles.has(file.uri)) {
                             div.classList.add('expanded');
-                            renderSymbols(symbolsContainer, file.symbols, file.uri, file.states);
+                            renderSymbols(symbolsContainer, file.symbols, file.uri, file.states, file.charCount || 0);
                         }
                         div.onclick = (e) => {
-                            if (!e.target.closest('.remove-btn') && !e.target.closest('.symbols-container')) {
+                            if (!e.target.closest('.remove-btn') && !e.target.closest('.action-btn') && !e.target.closest('.symbols-container')) {
                                 toggleFile(div, file);
                             }
                         };

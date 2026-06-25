@@ -98,6 +98,7 @@ class PromptBuilderViewProvider implements vscode.WebviewViewProvider {
         const savedUserText = await this.payloadManager.getUserText();
         const savedTreeSettings = await this.payloadManager.getTreeSettings();
         const filesInfo = await this.payloadManager.getFilesInfo();
+        const enrichedFiles = await this._enrichFilesWithCharCounts(filesInfo);
 
         const systemPrompt = this.sysPromptManager.getSystemPrompt();
         const projectPrompt = this.sysPromptManager.getProjectPrompt();
@@ -107,7 +108,7 @@ class PromptBuilderViewProvider implements vscode.WebviewViewProvider {
 
         webviewView.webview.html = this._getHtmlForWebview(
             webviewView.webview, systemPrompt, projectPrompt,
-            savedUserText, filesInfo, savedTreeSettings,
+            savedUserText, enrichedFiles as FileInfo[], savedTreeSettings,
             currentMode, askPrompt, customPrompt
         );
 
@@ -136,6 +137,62 @@ class PromptBuilderViewProvider implements vscode.WebviewViewProvider {
                 case 'toggleSymbol':
                     await this.payloadManager.toggleSymbol(vscode.Uri.parse(data.uri), data.symbolId);
                     this._updateFileList();
+                    break;
+                case 'setAllSymbols':
+                    console.log('[setAllSymbols] Получено сообщение:', JSON.stringify(data, null, 2));
+                    
+                    const targetUri = vscode.Uri.parse(data.uri);
+                    const shouldCheck = data.checkAll;
+                    console.log('[setAllSymbols] URI:', data.uri);
+                    console.log('[setAllSymbols] Должен установить все галочки:', shouldCheck);
+                    
+                    const currentFiles = await this.payloadManager.getFilesInfo();
+                    console.log('[setAllSymbols] Найдено файлов:', currentFiles.length);
+                    console.log('[setAllSymbols] URI файлов:', currentFiles.map(f => f.uri));
+                    
+                    const targetFile = currentFiles.find(f => f.uri === data.uri);
+                    console.log('[setAllSymbols] Целевой файл найден:', !!targetFile);
+                    
+                    if (targetFile) {
+                        console.log('[setAllSymbols] Символов в файле:', targetFile.symbols?.length || 0);
+                        console.log('[setAllSymbols] Текущие состояния:', targetFile.states);
+                        
+                        const idsToToggle: string[] = [];
+                        
+                        const traverse = (symbols: any[]) => {
+                            for (const sym of symbols) {
+                                const isChecked = targetFile.states[sym.id] !== false;
+                                console.log(`[setAllSymbols] Символ ${sym.id} (${sym.name}): isChecked=${isChecked}`);
+                                
+                                if (shouldCheck && !isChecked) {
+                                    idsToToggle.push(sym.id);
+                                    console.log(`[setAllSymbols] Добавлен в список для включения: ${sym.id}`);
+                                } else if (!shouldCheck && isChecked) {
+                                    idsToToggle.push(sym.id);
+                                    console.log(`[setAllSymbols] Добавлен в список для выключения: ${sym.id}`);
+                                }
+                                
+                                if (sym.children && sym.children.length > 0) {
+                                    traverse(sym.children);
+                                }
+                            }
+                        };
+                        
+                        traverse(targetFile.symbols || []);
+                        
+                        console.log('[setAllSymbols] ID для переключения:', idsToToggle);
+                        console.log('[setAllSymbols] Количество ID:', idsToToggle.length);
+                        
+                        for (const id of idsToToggle) {
+                            console.log(`[setAllSymbols] Переключаю символ: ${id}`);
+                            await this.payloadManager.toggleSymbol(targetUri, id);
+                        }
+                        
+                        console.log('[setAllSymbols] Все переключения завершены, обновляю список файлов');
+                        this._updateFileList();
+                    } else {
+                        console.error('[setAllSymbols] Целевой файл не найден!');
+                    }
                     break;
                 case 'fetchGitHistory':
                     this._view?.webview.postMessage({ type: 'gitStatus', text: 'Fetching git history...' });
@@ -195,8 +252,8 @@ class PromptBuilderViewProvider implements vscode.WebviewViewProvider {
                     vscode.window.showInformationMessage('✅ Project prompt is saved!');
                     break;
                 case 'clearForm': {
-                    const currentFiles = await this.payloadManager.getFilesInfo();
-                    for (const file of currentFiles) {
+                    const currentFilesClear = await this.payloadManager.getFilesInfo();
+                    for (const file of currentFilesClear) {
                         await this.payloadManager.removeFile(vscode.Uri.parse(file.uri));
                     }
                     this._updateFileList();
@@ -277,6 +334,56 @@ class PromptBuilderViewProvider implements vscode.WebviewViewProvider {
         });
 
         this._updateFileList();
+    }
+
+    private async _enrichFilesWithCharCounts(files: FileInfo[]): Promise<any[]> {
+        const enriched = [];
+        for (const file of files) {
+            let fileCharCount = 0;
+            let enrichedSymbols = file.symbols || [];
+            try {
+                const uri = vscode.Uri.parse(file.uri);
+                const doc = await vscode.workspace.openTextDocument(uri);
+                const text = doc.getText();
+                fileCharCount = text.length;
+                
+                const enrich = (symbols: any[]): any[] => {
+                    return symbols.map(sym => {
+                        let symCharCount = 0;
+                        if (sym.range && sym.range.start && sym.range.end) {
+                            try {
+                                const startPos = new vscode.Position(sym.range.start.line, sym.range.start.character);
+                                const endPos = new vscode.Position(sym.range.end.line, sym.range.end.character);
+                                const startOffset = doc.offsetAt(startPos);
+                                const endOffset = doc.offsetAt(endPos);
+                                symCharCount = Math.max(0, endOffset - startOffset);
+                            } catch (e) {
+                                symCharCount = 0;
+                            }
+                        } else if (typeof sym.charCount === 'number') {
+                            symCharCount = sym.charCount;
+                        }
+                        
+                        return {
+                            ...sym,
+                            charCount: symCharCount,
+                            children: sym.children ? enrich(sym.children) : []
+                        };
+                    });
+                };
+                
+                enrichedSymbols = enrich(file.symbols || []);
+            } catch (e) {
+                fileCharCount = (file as any).charCount || 0;
+            }
+            
+            enriched.push({
+                ...file,
+                charCount: fileCharCount,
+                symbols: enrichedSymbols
+            });
+        }
+        return enriched;
     }
 
     private async _fetchSchema(connStr: string): Promise<string> {
@@ -377,7 +484,8 @@ class PromptBuilderViewProvider implements vscode.WebviewViewProvider {
     private async _updateFileList() {
         if (this._view) {
             const filesInfo = await this.payloadManager.getFilesInfo();
-            this._view.webview.postMessage({ type: 'updateFiles', files: filesInfo });
+            const enrichedFiles = await this._enrichFilesWithCharCounts(filesInfo);
+            this._view.webview.postMessage({ type: 'updateFiles', files: enrichedFiles });
         }
     }
 
