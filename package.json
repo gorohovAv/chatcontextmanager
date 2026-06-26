@@ -55,6 +55,11 @@
           "type": "webview",
           "id": "logInterceptorView",
           "name": "Log Interceptor"
+        },
+        {
+          "type": "webview",
+          "id": "figmaView",
+          "name": "Figma Layout"
         }
       ]
     }
