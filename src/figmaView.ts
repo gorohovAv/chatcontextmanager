@@ -162,7 +162,7 @@ export class FigmaViewProvider implements vscode.WebviewViewProvider {
                     text: `Found ${nodeIds.length} image nodes` 
                 });
 
-                // Step 3: Download images
+                // Step 3: Download images with progress tracking
                 this._view?.webview.postMessage({ type: 'downloadStatus', text: 'Downloading images...' });
                 const imagesDir = path.join(folderPath, 'images');
                 const savedImages = await getFigmaImages(
@@ -170,7 +170,16 @@ export class FigmaViewProvider implements vscode.WebviewViewProvider {
                     pat, 
                     nodeIds, 
                     imagesDir,
-                    { format: 'png', scale: 2 }
+                    { format: 'png', scale: 2 },
+                    (batchIndex, totalBatches, downloadedCount, totalCount) => {
+                        this._view?.webview.postMessage({ 
+                            type: 'downloadProgress', 
+                            batchIndex, 
+                            totalBatches, 
+                            downloadedCount, 
+                            totalCount 
+                        });
+                    }
                 );
                 this._view?.webview.postMessage({ 
                     type: 'downloadStatus', 
@@ -383,6 +392,27 @@ export class FigmaViewProvider implements vscode.WebviewViewProvider {
             word-break: break-all;
             font-size: 0.9em;
         }
+        
+        .progress-bar {
+            width: 100%;
+            height: 20px;
+            background: var(--vscode-input-background);
+            border-radius: 4px;
+            overflow: hidden;
+            margin-top: 8px;
+        }
+        
+        .progress-fill {
+            height: 100%;
+            background: var(--vscode-button-background);
+            transition: width 0.3s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: var(--vscode-button-foreground);
+            font-size: 0.85em;
+            font-weight: 600;
+        }
     </style>
 </head>
 <body>
@@ -414,6 +444,9 @@ export class FigmaViewProvider implements vscode.WebviewViewProvider {
         <h3>⬇️ Download</h3>
         <button id="downloadBtn" onclick="download()" disabled>Download Layout</button>
         <div class="status" id="statusDisplay"></div>
+        <div class="progress-bar" id="progressBar" style="display: none;">
+            <div class="progress-fill" id="progressFill" style="width: 0%;">0%</div>
+        </div>
     </div>
 
     <script>
@@ -459,12 +492,24 @@ export class FigmaViewProvider implements vscode.WebviewViewProvider {
                     statusDiv.scrollTop = statusDiv.scrollHeight;
                     break;
                     
+                case 'downloadProgress':
+                    const progressBar = document.getElementById('progressBar');
+                    const progressFill = document.getElementById('progressFill');
+                    progressBar.style.display = 'block';
+                    
+                    const percentage = Math.round((message.batchIndex / message.totalBatches) * 100);
+                    progressFill.style.width = percentage + '%';
+                    progressFill.textContent = \`\${message.batchIndex}/\${message.totalBatches} batches (\${message.downloadedCount}/\${message.totalCount} images)\`;
+                    break;
+                    
                 case 'downloadComplete':
                     document.getElementById('statusDisplay').textContent += '\\n✅ Download complete!';
+                    document.getElementById('progressBar').style.display = 'none';
                     break;
                     
                 case 'downloadError':
                     document.getElementById('statusDisplay').textContent += '\\n❌ Error: ' + message.error;
+                    document.getElementById('progressBar').style.display = 'none';
                     break;
             }
         });
@@ -526,6 +571,7 @@ export class FigmaViewProvider implements vscode.WebviewViewProvider {
             }
             
             document.getElementById('statusDisplay').textContent = '';
+            document.getElementById('progressBar').style.display = 'none';
             vscode.postMessage({ type: 'download', folder: selectedFolder });
         }
 
