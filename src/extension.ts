@@ -1,19 +1,99 @@
 import * as vscode from 'vscode';
+import { exec } from 'child_process';
+import { promisify } from 'util';
+import * as fs from 'fs';
 import * as path from 'path';
-import { getFigmaFileJson, getFigmaImages } from './figmaGetLib';
+import * as os from 'os';
+import { SystemPromptManager } from './sysPrompt';
+import { TreeManager, TreeOptions } from './tree';
+import { PayloadManager, FileInfo } from './payload';
+import { LogInterceptorViewProvider } from './logInterceptor';
+import { SettingsViewProvider } from './settingsView';
+import { FigmaViewProvider } from './figmaView';
+import { getGitHistory } from './history';
+import { getMainWebview } from './mainWebview';
 
-interface FigmaLink {
-    id: string;
-    url: string;
-    name: string;
-    createdAt: number;
+const execAsync = promisify(exec);
+
+function findCliTool(toolName: string): string {
+    if (os.platform() === 'win32') {
+        if (toolName === 'psql') {
+            const pgDir = 'C:\\Program Files\\PostgreSQL';
+            if (fs.existsSync(pgDir)) {
+                const versions = fs.readdirSync(pgDir).filter(v => v.match(/^\d+$/)).sort((a, b) => parseInt(b) - parseInt(a));
+                for (const v of versions) {
+                    const toolPath = path.join(pgDir, v, 'bin', 'psql.exe');
+                    if (fs.existsSync(toolPath)) {
+                        return `"${toolPath}"`;
+                    }
+                }
+            }
+        } else if (toolName === 'mysql') {
+            const myDir = 'C:\\Program Files\\MySQL';
+            if (fs.existsSync(myDir)) {
+                const versions = fs.readdirSync(myDir).filter(v => v.startsWith('MySQL Server')).sort().reverse();
+                for (const v of versions) {
+                    const toolPath = path.join(myDir, v, 'bin', 'mysql.exe');
+                    if (fs.existsSync(toolPath)) {
+                        return `"${toolPath}"`;
+                    }
+                }
+            }
+        }
+    }
+    return toolName;
 }
 
-export class FigmaViewProvider implements vscode.WebviewViewProvider {
-    public static readonly viewType = 'figmaView';
-    private _view?: vscode.WebviewView;
+export function activate(context: vscode.ExtensionContext) {
+    console.log('🚀 [МОЕ РАСШИРЕНИЕ] Функция activate() вызвана!');
 
-    constructor(private readonly context: vscode.ExtensionContext) {}
+    const provider = new PromptBuilderViewProvider(context);
+    const disposable = vscode.window.registerWebviewViewProvider(
+        PromptBuilderViewProvider.viewType, 
+        provider,
+        { webviewOptions: { retainContextWhenHidden: true } }
+    );
+    context.subscriptions.push(disposable);
+
+    const settingsProvider = new SettingsViewProvider(context);
+    const settingsDisposable = vscode.window.registerWebviewViewProvider(
+        SettingsViewProvider.viewType,
+        settingsProvider,
+        { webviewOptions: { retainContextWhenHidden: true } }
+    );
+    context.subscriptions.push(settingsDisposable);
+
+    const logProvider = new LogInterceptorViewProvider(context);
+    const logDisposable = vscode.window.registerWebviewViewProvider(
+        LogInterceptorViewProvider.viewType,
+        logProvider,
+        { webviewOptions: { retainContextWhenHidden: true } }
+    );
+    context.subscriptions.push(logDisposable);
+
+    const figmaProvider = new FigmaViewProvider(context);
+    const figmaDisposable = vscode.window.registerWebviewViewProvider(
+        FigmaViewProvider.viewType,
+        figmaProvider,
+        { webviewOptions: { retainContextWhenHidden: true } }
+    );
+    context.subscriptions.push(figmaDisposable);
+}
+
+class PromptBuilderViewProvider implements vscode.WebviewViewProvider {
+    public static readonly viewType = 'promptBuilderView';
+    private _view?: vscode.WebviewView;
+    private sysPromptManager: SystemPromptManager;
+    private treeManager: TreeManager;
+    private payloadManager: PayloadManager;
+    private _dbStructure: string = '';
+    private _gitHistory: string = '';
+
+    constructor(private readonly context: vscode.ExtensionContext) {
+        this.sysPromptManager = new SystemPromptManager(context);
+        this.treeManager = new TreeManager(context);
+        this.payloadManager = new PayloadManager(context);
+    }
 
     public async resolveWebviewView(
         webviewView: vscode.WebviewView,
@@ -23,554 +103,418 @@ export class FigmaViewProvider implements vscode.WebviewViewProvider {
         this._view = webviewView;
         webviewView.webview.options = { enableScripts: true };
 
-        webviewView.webview.html = this._getHtmlForWebview(webviewView.webview);
+        await this.payloadManager.loadState();
+        const savedUserText = await this.payloadManager.getUserText();
+        const savedTreeSettings = await this.payloadManager.getTreeSettings();
+        const filesInfo = await this.payloadManager.getFilesInfo();
+        const enrichedFiles = await this._enrichFilesWithCharCounts(filesInfo);
+
+        const systemPrompt = this.sysPromptManager.getSystemPrompt();
+        const projectPrompt = this.sysPromptManager.getProjectPrompt();
+        const askPrompt = this.sysPromptManager.getAskPrompt();
+        const customPrompt = this.sysPromptManager.getCustomPrompt();
+        const currentMode = this.sysPromptManager.getCurrentMode();
+
+        webviewView.webview.html = this._getHtmlForWebview(
+            webviewView.webview, systemPrompt, projectPrompt,
+            savedUserText, enrichedFiles as FileInfo[], savedTreeSettings,
+            currentMode, askPrompt, customPrompt
+        );
+
+        webviewView.onDidDispose(() => {
+            this.payloadManager.flushSave().catch(e => 
+                console.error('[PromptBuilder] Ошибка сохранения при закрытии:', e)
+            );
+        });
 
         webviewView.webview.onDidReceiveMessage(async (data) => {
             switch (data.type) {
-                case 'savePat':
-                    await this.context.secrets.store('figmaPat', data.pat);
-                    vscode.window.showInformationMessage('✅ Figma PAT saved!');
-                    this._view?.webview.postMessage({ type: 'patSaved' });
-                    break;
-
-                case 'getPat':
-                    const pat = await this.context.secrets.get('figmaPat');
-                    this._view?.webview.postMessage({ type: 'patLoaded', pat: pat || '', hasPat: !!pat });
-                    break;
-
-                case 'addLink':
-                    const links = await this._getLinks();
-                    const newLink: FigmaLink = {
-                        id: Date.now().toString(),
-                        url: data.url,
-                        name: data.name || `Figma Layout ${links.length + 1}`,
-                        createdAt: Date.now()
-                    };
-                    links.push(newLink);
-                    await this.context.globalState.update('figmaLinks', links);
-                    this._updateLinks();
-                    break;
-
-                case 'removeLink':
-                    const currentLinks = await this._getLinks();
-                    const filteredLinks = currentLinks.filter(l => l.id !== data.id);
-                    await this.context.globalState.update('figmaLinks', filteredLinks);
-                    const selectedId = this.context.globalState.get<string>('selectedFigmaLink');
-                    if (selectedId === data.id) {
-                        await this.context.globalState.update('selectedFigmaLink', undefined);
-                    }
-                    this._updateLinks();
-                    break;
-
-                case 'selectLink':
-                    await this.context.globalState.update('selectedFigmaLink', data.id);
-                    this._updateLinks();
-                    break;
-
-                case 'getLinks':
-                    this._updateLinks();
-                    break;
-
-                case 'selectFolder':
-                    const folderUri = await vscode.window.showOpenDialog({
-                        canSelectMany: false,
-                        openLabel: 'Select Folder',
-                        canSelectFiles: false,
-                        canSelectFolders: true
+                case 'addFile':
+                    const uris = await vscode.window.showOpenDialog({
+                        canSelectMany: true, openLabel: 'Добавить файлы',
+                        canSelectFiles: true, canSelectFolders: false
                     });
-                    if (folderUri && folderUri.length > 0) {
-                        this._view?.webview.postMessage({ 
-                            type: 'folderSelected', 
-                            folder: folderUri[0].fsPath 
-                        });
+                    if (uris) {
+                        await this.payloadManager.addFiles(uris);
+                        this._updateFileList();
                     }
                     break;
+                case 'removeFile':
+                    await this.payloadManager.removeFile(vscode.Uri.parse(data.uri));
+                    this._updateFileList();
+                    break;
+                case 'toggleSymbol':
+                    await this.payloadManager.toggleSymbol(vscode.Uri.parse(data.uri), data.symbolId);
+                    this._updateFileList();
+                    break;
+                case 'setAllSymbols':
+                    console.log('[setAllSymbols] Получено сообщение:', JSON.stringify(data, null, 2));
+                    
+                    const targetUri = vscode.Uri.parse(data.uri);
+                    const shouldCheck = data.checkAll;
+                    console.log('[setAllSymbols] URI:', data.uri);
+                    console.log('[setAllSymbols] Должен установить все галочки:', shouldCheck);
+                    
+                    const currentFiles = await this.payloadManager.getFilesInfo();
+                    console.log('[setAllSymbols] Найдено файлов:', currentFiles.length);
+                    console.log('[setAllSymbols] URI файлов:', currentFiles.map(f => f.uri));
+                    
+                    const targetFile = currentFiles.find(f => f.uri === data.uri);
+                    console.log('[setAllSymbols] Целевой файл найден:', !!targetFile);
+                    
+                    if (targetFile) {
+                        console.log('[setAllSymbols] Символов в файле:', targetFile.symbols?.length || 0);
+                        console.log('[setAllSymbols] Текущие состояния:', targetFile.states);
+                        
+                        const idsToToggle: string[] = [];
+                        
+                        const traverse = (symbols: any[]) => {
+                            for (const sym of symbols) {
+                                const isChecked = targetFile.states[sym.id] !== false;
+                                console.log(`[setAllSymbols] Символ ${sym.id} (${sym.name}): isChecked=${isChecked}`);
+                                
+                                if (shouldCheck && !isChecked) {
+                                    idsToToggle.push(sym.id);
+                                    console.log(`[setAllSymbols] Добавлен в список для включения: ${sym.id}`);
+                                } else if (!shouldCheck && isChecked) {
+                                    idsToToggle.push(sym.id);
+                                    console.log(`[setAllSymbols] Добавлен в список для выключения: ${sym.id}`);
+                                }
+                                
+                                if (sym.children && sym.children.length > 0) {
+                                    traverse(sym.children);
+                                }
+                            }
+                        };
+                        
+                        traverse(targetFile.symbols || []);
+                        
+                        console.log('[setAllSymbols] ID для переключения:', idsToToggle);
+                        console.log('[setAllSymbols] Количество ID:', idsToToggle.length);
+                        
+                        for (const id of idsToToggle) {
+                            console.log(`[setAllSymbols] Переключаю символ: ${id}`);
+                            await this.payloadManager.toggleSymbol(targetUri, id);
+                        }
+                        
+                        console.log('[setAllSymbols] Все переключения завершены, обновляю список файлов');
+                        this._updateFileList();
+                    } else {
+                        console.error('[setAllSymbols] Целевой файл не найден!');
+                    }
+                    break;
+                case 'fetchGitHistory':
+                    this._view?.webview.postMessage({ type: 'gitStatus', text: 'Fetching git history...' });
+                    this._gitHistory = '';
+                    
+                    try {
+                        const commitCount = parseInt(data.commitCount) || 5;
+                        const history = await getGitHistory(commitCount);
+                        this._gitHistory = history.trim();
+                        this._view?.webview.postMessage({ type: 'gitHistoryReady', commitCount });
+                    } catch (e: any) {
+                        this._view?.webview.postMessage({ type: 'gitError', error: e.message });
+                    }
+                    break;
+                case 'compileAndCopy':
+                    let finalPrompt = await this.payloadManager.compileFullPrompt(
+                        this.sysPromptManager.getActiveSystemPrompt(),
+                        this.sysPromptManager.getProjectPrompt(),
+                        data.text,
+                        {
+                            includeTree: data.includeTree,
+                            useGitignore: data.useGitignore,
+                            customIgnore: data.customIgnore,
+                            getProjectTree: (opts) => this.treeManager.getProjectTree(opts)
+                        }
+                    );
+                    
+                    if (data.includeGitHistory && this._gitHistory) {
+                        const commitCount = parseInt(data.gitCommitCount) || 5;
+                        finalPrompt += `\n\n# Git History (last ${commitCount} commits)\n${this._gitHistory}`;
+                    }
+                    
+                    if (data.includeDb && this._dbStructure) {
+                        finalPrompt += `\n\n${this._dbStructure}`;
+                    }
+                    
+                    await vscode.env.clipboard.writeText(finalPrompt.trim());
+                    vscode.window.showInformationMessage('✅ Prompt is in clipboard!');
+                    break;
+                case 'saveSystemPrompt':
+                    await this.sysPromptManager.setSystemPrompt(data.prompt);
+                    vscode.window.showInformationMessage('✅ Global prompt is saved!');
+                    break;
+                case 'saveAskPrompt':
+                    await this.sysPromptManager.setAskPrompt(data.prompt);
+                    vscode.window.showInformationMessage('✅ Ask prompt is saved!');
+                    break;
+                case 'saveCustomPrompt':
+                    await this.sysPromptManager.setCustomPrompt(data.prompt);
+                    vscode.window.showInformationMessage('✅ Custom prompt is saved!');
+                    break;
+                case 'setMode':
+                    await this.sysPromptManager.setCurrentMode(data.mode);
+                    break;
+                case 'saveProjectPrompt':
+                    await this.sysPromptManager.setProjectPrompt(data.prompt);
+                    vscode.window.showInformationMessage('✅ Project prompt is saved!');
+                    break;
+                case 'clearForm': {
+                    const currentFilesClear = await this.payloadManager.getFilesInfo();
+                    for (const file of currentFilesClear) {
+                        await this.payloadManager.removeFile(vscode.Uri.parse(file.uri));
+                    }
+                    this._updateFileList();
+                    this._dbStructure = '';
+                    this._gitHistory = '';
+                    break;
+                }
+                case 'saveUserText':
+                    await this.payloadManager.saveUserText(data.text);
+                    break;
+                case 'saveTreeSettings':
+                    await this.payloadManager.saveTreeSettings({
+                        includeTree: !!data.includeTree,
+                        useGitignore: !!data.useGitignore,
+                        customIgnore: data.customIgnore || ''
+                    });
+                    break;
+                case 'requestCharCount':
+                    let length = await this.payloadManager.getCompiledPromptLength(
+                        this.sysPromptManager.getActiveSystemPrompt(),
+                        this.sysPromptManager.getProjectPrompt(),
+                        data.userText || '',
+                        {
+                            includeTree: !!data.includeTree,
+                            useGitignore: !!data.useGitignore,
+                            customIgnore: data.customIgnore || '',
+                            getProjectTree: (opts) => this.treeManager.getProjectTree(opts)
+                        }
+                    );
+                    
+                    if (data.includeGitHistory && this._gitHistory) {
+                        const commitCount = parseInt(data.gitCommitCount) || 5;
+                        length += `\n\n# Git History (last ${commitCount} commits)\n${this._gitHistory}`.length;
+                    }
 
-                case 'download':
-                    await this._downloadLayout(data.folder);
+                    if (data.includeDb && this._dbStructure) {
+                        length += `\n\n${this._dbStructure}`.length;
+                    }
+                    this._view?.webview.postMessage({ type: 'updateCharCount', charCount: length });
+                    break;
+                case 'getDbAliases':
+                    const aliases = this.context.globalState.get<string[]>('dbConnectionAliases', []);
+                    this._view?.webview.postMessage({ type: 'dbAliases', aliases });
+                    break;
+                case 'fetchDbStructure':
+                    const selectedAliases: string[] = data.aliases;
+                    this._view?.webview.postMessage({ type: 'dbStatus', text: 'Fetching DB structure...' });
+                    this._dbStructure = '';
+                    
+                    let fullStructure = '';
+                    for (const alias of selectedAliases) {
+                        const connStr = await this.context.secrets.get(`dbConn_${alias}`);
+                        if (!connStr) {
+                            fullStructure += `${alias}\n     (Connection string not found)\n\n`;
+                            continue;
+                        }
+                        
+                        const dbType = connStr.split('://')[0];
+                        const toolName = dbType === 'postgres' || dbType === 'postgresql' ? 'psql' : dbType === 'mysql' ? 'mysql' : 'sqlite3';
+                        
+                        try {
+                            const schema = await this._fetchSchema(connStr);
+                            fullStructure += `${alias}\n${schema}\n\n`;
+                        } catch (err: any) {
+                            let errMsg = err.message || 'Unknown error';
+                            errMsg = errMsg.replace(/[^\x00-\x7F]/g, ' ').replace(/\s+/g, ' ').trim();
+                            if (errMsg.toLowerCase().includes('not recognized') || errMsg.toLowerCase().includes('not found') || errMsg.length < 10) {
+                                errMsg = `Command '${toolName}' not found. Please ensure the CLI tool is installed and added to system PATH, or installed in the default directory.`;
+                            }
+                            fullStructure += `${alias}\n     (Error: ${errMsg})\n\n`;
+                        }
+                    }
+                    
+                    this._dbStructure = fullStructure.trim();
+                    this._view?.webview.postMessage({ type: 'dbStructureReady' });
                     break;
             }
         });
 
-        // Send initial data
-        this._updateLinks();
+        this._updateFileList();
     }
 
-    private async _getLinks(): Promise<FigmaLink[]> {
-        return this.context.globalState.get<FigmaLink[]>('figmaLinks', []);
-    }
-
-    private async _updateLinks() {
-        if (this._view) {
-            const links = await this._getLinks();
-            const selectedId = this.context.globalState.get<string>('selectedFigmaLink');
-            this._view.webview.postMessage({ 
-                type: 'updateLinks', 
-                links, 
-                selectedId 
-            });
-        }
-    }
-
-    private async _downloadLayout(folderPath: string) {
-        const pat = await this.context.secrets.get('figmaPat');
-        const selectedId = this.context.globalState.get<string>('selectedFigmaLink');
-        const links = await this._getLinks();
-        const selectedLink = links.find(l => l.id === selectedId);
-
-        if (!pat) {
-            vscode.window.showErrorMessage('❌ Figma PAT is not set!');
-            return;
-        }
-
-        if (!selectedLink) {
-            vscode.window.showErrorMessage('❌ No Figma link selected!');
-            return;
-        }
-
-        if (!folderPath) {
-            vscode.window.showErrorMessage('❌ No folder selected!');
-            return;
-        }
-
-        try {
-            this._view?.webview.postMessage({ type: 'downloadStatus', text: 'Starting download...' });
-
-            // Extract file key from URL
-            const fileKey = this._extractFileKey(selectedLink.url);
-            if (!fileKey) {
-                throw new Error('Invalid Figma URL');
-            }
-
-            // Step 1: Download full JSON
-            this._view?.webview.postMessage({ type: 'downloadStatus', text: 'Downloading layout JSON...' });
-            const jsonPath = path.join(folderPath, 'figma_layout.json');
-            await getFigmaFileJson(fileKey, pat, jsonPath, { geometry: true, pluginData: true });
-            this._view?.webview.postMessage({ type: 'downloadStatus', text: '✓ Layout JSON downloaded' });
-
-            // Step 2: Extract node IDs from JSON for images
-            this._view?.webview.postMessage({ type: 'downloadStatus', text: 'Extracting image nodes...' });
-            const fs = await import('fs/promises');
-            const jsonData = JSON.parse(await fs.readFile(jsonPath, 'utf-8'));
-            const nodeIds = this._extractImageNodes(jsonData);
-            
-            if (nodeIds.length === 0) {
-                this._view?.webview.postMessage({ type: 'downloadStatus', text: '⚠ No image nodes found' });
-            } else {
-                this._view?.webview.postMessage({ 
-                    type: 'downloadStatus', 
-                    text: `Found ${nodeIds.length} image nodes` 
-                });
-
-                // Step 3: Download images
-                this._view?.webview.postMessage({ type: 'downloadStatus', text: 'Downloading images...' });
-                const imagesDir = path.join(folderPath, 'images');
-                const savedImages = await getFigmaImages(
-                    fileKey, 
-                    pat, 
-                    nodeIds, 
-                    imagesDir,
-                    { format: 'png', scale: 2 }
-                );
-                this._view?.webview.postMessage({ 
-                    type: 'downloadStatus', 
-                    text: `✓ Downloaded ${savedImages.length} images` 
-                });
-            }
-
-            this._view?.webview.postMessage({ type: 'downloadComplete' });
-            vscode.window.showInformationMessage('✅ Figma layout downloaded successfully!');
-
-        } catch (error: any) {
-            const errorMessage = error.message || 'Unknown error';
-            this._view?.webview.postMessage({ type: 'downloadError', error: errorMessage });
-            vscode.window.showErrorMessage(`❌ Download failed: ${errorMessage}`);
-        }
-    }
-
-    private _extractFileKey(url: string): string | null {
-        const match = url.match(/figma\.com\/(?:file|design)\/([a-zA-Z0-9]+)/);
-        return match ? match[1] : null;
-    }
-
-    private _extractImageNodes(data: any): string[] {
-        const nodeIds: string[] = [];
-        
-        const traverse = (node: any) => {
-            if (!node) return;
-            
-            // Check if node has image fills
-            if (node.fills) {
-                for (const fill of node.fills) {
-                    if (fill.type === 'IMAGE' && fill.imageRef) {
-                        nodeIds.push(node.id);
-                    }
-                }
-            }
-            
-            // Check if node is a vector or has specific properties for export
-            if (node.type === 'VECTOR' || node.type === 'BOOLEAN_OPERATION') {
-                nodeIds.push(node.id);
-            }
-            
-            // Recursively traverse children
-            if (node.children) {
-                for (const child of node.children) {
-                    traverse(child);
-                }
-            }
-        };
-
-        if (data.document) {
-            traverse(data.document);
-        }
-
-        return [...new Set(nodeIds)]; // Remove duplicates
-    }
-
-    private _getHtmlForWebview(webview: vscode.Webview) {
-        return `<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Figma Layout Downloader</title>
-    <style>
-        body {
-            font-family: var(--vscode-font-family);
-            padding: 16px;
-            color: var(--vscode-foreground);
-            background-color: var(--vscode-editor-background);
-        }
-        
-        .section {
-            margin-bottom: 24px;
-            padding: 16px;
-            background: var(--vscode-editor-inactiveSelectionBackground);
-            border-radius: 6px;
-        }
-        
-        h3 {
-            margin-top: 0;
-            margin-bottom: 12px;
-            color: var(--vscode-foreground);
-        }
-        
-        label {
-            display: block;
-            margin-bottom: 8px;
-            font-weight: 500;
-        }
-        
-        input[type="text"],
-        input[type="password"] {
-            width: 100%;
-            padding: 8px;
-            margin-bottom: 8px;
-            background: var(--vscode-input-background);
-            color: var(--vscode-input-foreground);
-            border: 1px solid var(--vscode-input-border);
-            border-radius: 4px;
-            box-sizing: border-box;
-        }
-        
-        button {
-            padding: 8px 16px;
-            background: var(--vscode-button-background);
-            color: var(--vscode-button-foreground);
-            border: none;
-            border-radius: 4px;
-            cursor: pointer;
-            margin-right: 8px;
-            margin-bottom: 8px;
-        }
-        
-        button:hover:not(:disabled) {
-            background: var(--vscode-button-hoverBackground);
-        }
-        
-        button:disabled {
-            opacity: 0.5;
-            cursor: not-allowed;
-        }
-        
-        button.secondary {
-            background: var(--vscode-button-secondaryBackground);
-            color: var(--vscode-button-secondaryForeground);
-        }
-        
-        .links-container {
-            display: flex;
-            flex-direction: column;
-            gap: 8px;
-            margin-top: 12px;
-        }
-        
-        .link-card {
-            padding: 12px;
-            background: var(--vscode-editor-background);
-            border: 2px solid transparent;
-            border-radius: 6px;
-            cursor: pointer;
-            transition: all 0.2s;
-            width: 100%;
-        }
-        
-        .link-card:hover {
-            border-color: var(--vscode-focusBorder);
-        }
-        
-        .link-card.selected {
-            border-color: var(--vscode-button-background);
-            background: var(--vscode-button-background)20;
-        }
-        
-        .link-card-content {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }
-        
-        .link-info {
-            flex: 1;
-            overflow: hidden;
-            margin-right: 8px;
-        }
-        
-        .link-name {
-            font-weight: 600;
-            margin-bottom: 4px;
-            white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
-        }
-        
-        .link-url {
-            font-size: 0.85em;
-            color: var(--vscode-descriptionForeground);
-            white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
-        }
-        
-        .link-actions {
-            display: flex;
-            gap: 4px;
-        }
-        
-        .link-actions button {
-            padding: 4px 8px;
-            font-size: 0.85em;
-            margin: 0;
-        }
-        
-        .status {
-            padding: 12px;
-            background: var(--vscode-textBlockQuote-background);
-            border-radius: 4px;
-            margin-top: 12px;
-            font-family: monospace;
-            white-space: pre-wrap;
-            max-height: 200px;
-            overflow-y: auto;
-        }
-        
-        .folder-display {
-            padding: 8px;
-            background: var(--vscode-input-background);
-            border-radius: 4px;
-            margin-top: 8px;
-            word-break: break-all;
-            font-size: 0.9em;
-        }
-    </style>
-</head>
-<body>
-    <div class="section">
-        <h3>🔑 Figma Personal Access Token</h3>
-        <label for="patInput">Enter your Figma PAT:</label>
-        <input type="password" id="patInput" placeholder="figd_...">
-        <button id="savePatBtn" onclick="savePat()">Save Token</button>
-    </div>
-
-    <div class="section">
-        <h3>🔗 Figma Layout Links</h3>
-        <label for="linkUrlInput">Add new link:</label>
-        <input type="text" id="linkUrlInput" placeholder="https://www.figma.com/file/...">
-        <input type="text" id="linkNameInput" placeholder="Link name (optional)">
-        <button onclick="addLink()">Add Link</button>
-        
-        <div class="links-container" id="linksContainer"></div>
-    </div>
-
-    <div class="section">
-        <h3>📁 Download Location</h3>
-        <label>Select folder to save layout:</label>
-        <button onclick="selectFolder()">Choose Folder</button>
-        <div class="folder-display" id="folderDisplay">No folder selected</div>
-    </div>
-
-    <div class="section">
-        <h3>⬇️ Download</h3>
-        <button id="downloadBtn" onclick="download()" disabled>Download Layout</button>
-        <div class="status" id="statusDisplay"></div>
-    </div>
-
-    <script>
-        const vscode = acquireVsCodeApi();
-        let currentLinks = [];
-        let selectedId = null;
-        let selectedFolder = '';
-        let patSaved = false;
-
-        window.addEventListener('message', event => {
-            const message = event.data;
-            
-            switch (message.type) {
-                case 'patLoaded':
-                    document.getElementById('patInput').value = message.pat;
-                    patSaved = message.hasPat;
-                    updatePatButton();
-                    updateDownloadButtonState();
-                    break;
-                    
-                case 'patSaved':
-                    patSaved = true;
-                    updatePatButton();
-                    updateDownloadButtonState();
-                    break;
-                    
-                case 'updateLinks':
-                    currentLinks = message.links;
-                    selectedId = message.selectedId;
-                    renderLinks();
-                    updateDownloadButtonState();
-                    break;
-                    
-                case 'folderSelected':
-                    selectedFolder = message.folder;
-                    document.getElementById('folderDisplay').textContent = selectedFolder;
-                    updateDownloadButtonState();
-                    break;
-                    
-                case 'downloadStatus':
-                    const statusDiv = document.getElementById('statusDisplay');
-                    statusDiv.textContent += message.text + '\\n';
-                    statusDiv.scrollTop = statusDiv.scrollHeight;
-                    break;
-                    
-                case 'downloadComplete':
-                    document.getElementById('statusDisplay').textContent += '\\n✅ Download complete!';
-                    break;
-                    
-                case 'downloadError':
-                    document.getElementById('statusDisplay').textContent += '\\n❌ Error: ' + message.error;
-                    break;
-            }
-        });
-
-        function updatePatButton() {
-            const btn = document.getElementById('savePatBtn');
-            btn.textContent = patSaved ? 'Change Token' : 'Save Token';
-        }
-
-        function updateDownloadButtonState() {
-            const btn = document.getElementById('downloadBtn');
-            const canDownload = patSaved && selectedId && selectedFolder;
-            btn.disabled = !canDownload;
-        }
-
-        function savePat() {
-            const pat = document.getElementById('patInput').value;
-            vscode.postMessage({ type: 'savePat', pat });
-        }
-
-        function addLink() {
-            const url = document.getElementById('linkUrlInput').value;
-            const name = document.getElementById('linkNameInput').value;
-            
-            if (!url) {
-                alert('Please enter a Figma URL');
-                return;
-            }
-            
-            vscode.postMessage({ type: 'addLink', url, name });
-            document.getElementById('linkUrlInput').value = '';
-            document.getElementById('linkNameInput').value = '';
-        }
-
-        function removeLink(id, event) {
-            event.stopPropagation();
-            if (confirm('Are you sure you want to remove this link?')) {
-                vscode.postMessage({ type: 'removeLink', id });
-            }
-        }
-
-        function selectLink(id) {
-            vscode.postMessage({ type: 'selectLink', id });
-        }
-
-        function selectFolder() {
-            vscode.postMessage({ type: 'selectFolder' });
-        }
-
-        function download() {
-            if (!selectedFolder) {
-                alert('Please select a folder first');
-                return;
-            }
-            
-            if (!selectedId) {
-                alert('Please select a Figma link first');
-                return;
-            }
-            
-            document.getElementById('statusDisplay').textContent = '';
-            vscode.postMessage({ type: 'download', folder: selectedFolder });
-        }
-
-        function renderLinks() {
-            const container = document.getElementById('linksContainer');
-            container.innerHTML = '';
-            
-            currentLinks.forEach(link => {
-                const card = document.createElement('div');
-                card.className = 'link-card';
-                if (link.id === selectedId) {
-                    card.classList.add('selected');
-                }
+    private async _enrichFilesWithCharCounts(files: FileInfo[]): Promise<any[]> {
+        const enriched = [];
+        for (const file of files) {
+            let fileCharCount = 0;
+            let enrichedSymbols = file.symbols || [];
+            try {
+                const uri = vscode.Uri.parse(file.uri);
+                const doc = await vscode.workspace.openTextDocument(uri);
+                const text = doc.getText();
+                fileCharCount = text.length;
                 
-                card.innerHTML = \`
-                    <div class="link-card-content">
-                        <div class="link-info">
-                            <div class="link-name">\${escapeHtml(link.name)}</div>
-                            <div class="link-url">\${escapeHtml(link.url)}</div>
-                        </div>
-                        <div class="link-actions">
-                            <button onclick="removeLink('\${link.id}', event)">Remove</button>
-                        </div>
-                    </div>
-                \`;
-                
-                card.onclick = () => {
-                    selectLink(link.id);
+                const enrich = (symbols: any[]): any[] => {
+                    return symbols.map(sym => {
+                        let symCharCount = 0;
+                        if (sym.range && sym.range.start && sym.range.end) {
+                            try {
+                                const startPos = new vscode.Position(sym.range.start.line, sym.range.start.character);
+                                const endPos = new vscode.Position(sym.range.end.line, sym.range.end.character);
+                                const startOffset = doc.offsetAt(startPos);
+                                const endOffset = doc.offsetAt(endPos);
+                                symCharCount = Math.max(0, endOffset - startOffset);
+                            } catch (e) {
+                                symCharCount = 0;
+                            }
+                        } else if (typeof sym.charCount === 'number') {
+                            symCharCount = sym.charCount;
+                        }
+                        
+                        return {
+                            ...sym,
+                            charCount: symCharCount,
+                            children: sym.children ? enrich(sym.children) : []
+                        };
+                    });
                 };
                 
-                container.appendChild(card);
+                enrichedSymbols = enrich(file.symbols || []);
+            } catch (e) {
+                fileCharCount = (file as any).charCount || 0;
+            }
+            
+            enriched.push({
+                ...file,
+                charCount: fileCharCount,
+                symbols: enrichedSymbols
             });
         }
+        return enriched;
+    }
 
-        function escapeHtml(text) {
-            const div = document.createElement('div');
-            div.textContent = text;
-            return div.innerHTML;
+    private async _fetchSchema(connStr: string): Promise<string> {
+        let cmd = '';
+        let dbType = '';
+        let toolName = '';
+        
+        if (connStr.startsWith('postgres://') || connStr.startsWith('postgresql://')) {
+            dbType = 'postgres';
+            toolName = 'psql';
+            
+            let cleanUri = connStr;
+            let schema = 'current_schema()';
+
+            // Extract schema from URI parameters to avoid psql errors and use it in query
+            const schemaMatch = connStr.match(/[?&](schema|search_path|currentSchema)=([^&]+)/);
+            if (schemaMatch) {
+                schema = `'${decodeURIComponent(schemaMatch[2]).replace(/'/g, "''")}'`;
+                cleanUri = connStr.replace(new RegExp(`[?&]${schemaMatch[1]}=[^&]+`), '');
+                cleanUri = cleanUri.replace(/\?&/, '?').replace(/\?$/, '');
+            } else {
+                const optionsMatch = connStr.match(/[?&]options=([^&]+)/);
+                if (optionsMatch) {
+                    const options = decodeURIComponent(optionsMatch[1]);
+                    const searchPathMatch = options.match(/search_path[=\s]+(\w+)/);
+                    if (searchPathMatch) {
+                        schema = `'${searchPathMatch[1].replace(/'/g, "''")}'`;
+                    }
+                    cleanUri = connStr.replace(new RegExp(`[?&]options=[^&]+`), '');
+                    cleanUri = cleanUri.replace(/\?&/, '?').replace(/\?$/, '');
+                }
+            }
+
+            const query = `SELECT table_name, column_name, data_type FROM information_schema.columns WHERE table_schema=${schema} ORDER BY table_name, ordinal_position;`;
+            cmd = `${findCliTool(toolName)} "${cleanUri}" -t -A -F"|" -c "${query}"`;
+        } else if (connStr.startsWith('mysql://')) {
+            dbType = 'mysql';
+            toolName = 'mysql';
+            const query = "SELECT table_name, column_name, column_type FROM information_schema.columns WHERE table_schema=DATABASE() ORDER BY table_name, ordinal_position;";
+            cmd = `${findCliTool(toolName)} "${connStr}" -N -B -e "${query}"`;
+        } else if (connStr.startsWith('sqlite://')) {
+            dbType = 'sqlite';
+            toolName = 'sqlite3';
+            let filePath = connStr.replace(/^sqlite:\/\//, '');
+            if (filePath.match(/^\/[A-Za-z]:\//)) {
+                filePath = filePath.substring(1);
+            }
+            const query = "SELECT m.name, p.name, p.type FROM sqlite_master m JOIN pragma_table_info(m.name) p WHERE m.type='table' AND m.name NOT LIKE 'sqlite_%' ORDER BY m.name, p.cid;";
+            cmd = `${findCliTool(toolName)} "${filePath}" "${query}"`;
+        } else {
+            throw new Error('Unsupported DB type. Use postgres://, mysql://, or sqlite://');
         }
 
-        // Request initial data
-        vscode.postMessage({ type: 'getPat' });
-        vscode.postMessage({ type: 'getLinks' });
-    </script>
-</body>
-</html>`;
+        const { stdout, stderr } = await execAsync(cmd, { maxBuffer: 1024 * 1024 * 10, windowsHide: true });
+        
+        if (stderr && dbType !== 'sqlite') {
+            const cleanStderr = stderr.replace(/[^\x00-\x7F]/g, ' ').replace(/\s+/g, ' ').trim();
+            if (cleanStderr.toLowerCase().includes('error') || cleanStderr.toLowerCase().includes('not recognized') || cleanStderr.toLowerCase().includes('not found')) {
+                throw new Error(cleanStderr || 'Command failed');
+            }
+        }
+
+        return this._parseSchemaOutput(stdout, dbType);
+    }
+
+    private _parseSchemaOutput(output: string, dbType: string): string {
+        const tables: { [key: string]: string[] } = {};
+        const lines = output.split('\n').filter(line => line.trim().length > 0);
+        
+        for (const line of lines) {
+            let parts: string[] = [];
+            if (dbType === 'postgres' || dbType === 'sqlite') {
+                parts = line.split('|');
+            } else if (dbType === 'mysql') {
+                parts = line.split('\t');
+            }
+            
+            if (parts.length >= 3) {
+                const tableName = parts[0].trim();
+                const colName = parts[1].trim();
+                const colType = parts[2].trim();
+                
+                if (!tables[tableName]) {
+                    tables[tableName] = [];
+                }
+                tables[tableName].push(`${colName}: ${colType}`);
+            }
+        }
+        
+        let result = '';
+        for (const table in tables) {
+            result += `     ${table}(${tables[table].join(', ')})\n`;
+        }
+        
+        return result;
+    }
+
+    private async _updateFileList() {
+        if (this._view) {
+            const filesInfo = await this.payloadManager.getFilesInfo();
+            const enrichedFiles = await this._enrichFilesWithCharCounts(filesInfo);
+            this._view.webview.postMessage({ type: 'updateFiles', files: enrichedFiles });
+        }
+    }
+
+    private _getHtmlForWebview(
+        webview: vscode.Webview, systemPrompt: string, projectPrompt: string,
+        userText: string, filesInfo: FileInfo[],
+        treeSettings: { includeTree: boolean; useGitignore: boolean; customIgnore: string },
+        currentMode: string, askPrompt: string, customPrompt: string
+    ) {
+        const safeSystemPrompt = JSON.stringify(systemPrompt);
+        const safeProjectPrompt = JSON.stringify(projectPrompt);
+        const safeUserText = JSON.stringify(userText);
+        const safeFilesInfo = JSON.stringify(filesInfo);
+        const safeTreeSettings = JSON.stringify(treeSettings);
+        const safeAskPrompt = JSON.stringify(askPrompt);
+        const safeCustomPrompt = JSON.stringify(customPrompt);
+        const safeCurrentMode = JSON.stringify(currentMode);
+
+        return getMainWebview(safeSystemPrompt, safeProjectPrompt, safeUserText, safeFilesInfo, safeTreeSettings, safeAskPrompt, safeCustomPrompt, safeCurrentMode);
     }
 }
+
+export function deactivate() {}

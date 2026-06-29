@@ -30,11 +30,12 @@ export class FigmaViewProvider implements vscode.WebviewViewProvider {
                 case 'savePat':
                     await this.context.secrets.store('figmaPat', data.pat);
                     vscode.window.showInformationMessage('✅ Figma PAT saved!');
+                    this._view?.webview.postMessage({ type: 'patSaved' });
                     break;
 
                 case 'getPat':
                     const pat = await this.context.secrets.get('figmaPat');
-                    this._view?.webview.postMessage({ type: 'patLoaded', pat: pat || '' });
+                    this._view?.webview.postMessage({ type: 'patLoaded', pat: pat || '', hasPat: !!pat });
                     break;
 
                 case 'addLink':
@@ -54,6 +55,10 @@ export class FigmaViewProvider implements vscode.WebviewViewProvider {
                     const currentLinks = await this._getLinks();
                     const filteredLinks = currentLinks.filter(l => l.id !== data.id);
                     await this.context.globalState.update('figmaLinks', filteredLinks);
+                    const selectedId = this.context.globalState.get<string>('selectedFigmaLink');
+                    if (selectedId === data.id) {
+                        await this.context.globalState.update('selectedFigmaLink', undefined);
+                    }
                     this._updateLinks();
                     break;
 
@@ -280,8 +285,13 @@ export class FigmaViewProvider implements vscode.WebviewViewProvider {
             margin-bottom: 8px;
         }
         
-        button:hover {
+        button:hover:not(:disabled) {
             background: var(--vscode-button-hoverBackground);
+        }
+        
+        button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
         }
         
         button.secondary {
@@ -291,7 +301,7 @@ export class FigmaViewProvider implements vscode.WebviewViewProvider {
         
         .links-container {
             display: flex;
-            flex-wrap: wrap;
+            flex-direction: column;
             gap: 8px;
             margin-top: 12px;
         }
@@ -303,6 +313,7 @@ export class FigmaViewProvider implements vscode.WebviewViewProvider {
             border-radius: 6px;
             cursor: pointer;
             transition: all 0.2s;
+            width: 100%;
         }
         
         .link-card:hover {
@@ -314,14 +325,6 @@ export class FigmaViewProvider implements vscode.WebviewViewProvider {
             background: var(--vscode-button-background)20;
         }
         
-        .link-card.wide {
-            width: 100%;
-        }
-        
-        .link-card.narrow {
-            width: calc(50% - 4px);
-        }
-        
         .link-card-content {
             display: flex;
             justify-content: space-between;
@@ -331,6 +334,7 @@ export class FigmaViewProvider implements vscode.WebviewViewProvider {
         .link-info {
             flex: 1;
             overflow: hidden;
+            margin-right: 8px;
         }
         
         .link-name {
@@ -352,7 +356,6 @@ export class FigmaViewProvider implements vscode.WebviewViewProvider {
         .link-actions {
             display: flex;
             gap: 4px;
-            margin-left: 8px;
         }
         
         .link-actions button {
@@ -380,17 +383,6 @@ export class FigmaViewProvider implements vscode.WebviewViewProvider {
             word-break: break-all;
             font-size: 0.9em;
         }
-        
-        .view-toggle {
-            display: flex;
-            gap: 8px;
-            margin-bottom: 12px;
-        }
-        
-        .view-toggle button {
-            padding: 6px 12px;
-            font-size: 0.9em;
-        }
     </style>
 </head>
 <body>
@@ -398,16 +390,11 @@ export class FigmaViewProvider implements vscode.WebviewViewProvider {
         <h3>🔑 Figma Personal Access Token</h3>
         <label for="patInput">Enter your Figma PAT:</label>
         <input type="password" id="patInput" placeholder="figd_...">
-        <button onclick="savePat()">Save Token</button>
+        <button id="savePatBtn" onclick="savePat()">Save Token</button>
     </div>
 
     <div class="section">
         <h3>🔗 Figma Layout Links</h3>
-        <div class="view-toggle">
-            <button class="secondary" onclick="setView('wide')">Wide Cards</button>
-            <button class="secondary" onclick="setView('narrow')">Narrow Cards</button>
-        </div>
-        
         <label for="linkUrlInput">Add new link:</label>
         <input type="text" id="linkUrlInput" placeholder="https://www.figma.com/file/...">
         <input type="text" id="linkNameInput" placeholder="Link name (optional)">
@@ -425,7 +412,7 @@ export class FigmaViewProvider implements vscode.WebviewViewProvider {
 
     <div class="section">
         <h3>⬇️ Download</h3>
-        <button onclick="download()">Download Layout</button>
+        <button id="downloadBtn" onclick="download()" disabled>Download Layout</button>
         <div class="status" id="statusDisplay"></div>
     </div>
 
@@ -434,7 +421,7 @@ export class FigmaViewProvider implements vscode.WebviewViewProvider {
         let currentLinks = [];
         let selectedId = null;
         let selectedFolder = '';
-        let cardView = 'wide';
+        let patSaved = false;
 
         window.addEventListener('message', event => {
             const message = event.data;
@@ -442,17 +429,28 @@ export class FigmaViewProvider implements vscode.WebviewViewProvider {
             switch (message.type) {
                 case 'patLoaded':
                     document.getElementById('patInput').value = message.pat;
+                    patSaved = message.hasPat;
+                    updatePatButton();
+                    updateDownloadButtonState();
+                    break;
+                    
+                case 'patSaved':
+                    patSaved = true;
+                    updatePatButton();
+                    updateDownloadButtonState();
                     break;
                     
                 case 'updateLinks':
                     currentLinks = message.links;
                     selectedId = message.selectedId;
                     renderLinks();
+                    updateDownloadButtonState();
                     break;
                     
                 case 'folderSelected':
                     selectedFolder = message.folder;
                     document.getElementById('folderDisplay').textContent = selectedFolder;
+                    updateDownloadButtonState();
                     break;
                     
                 case 'downloadStatus':
@@ -470,6 +468,17 @@ export class FigmaViewProvider implements vscode.WebviewViewProvider {
                     break;
             }
         });
+
+        function updatePatButton() {
+            const btn = document.getElementById('savePatBtn');
+            btn.textContent = patSaved ? 'Change Token' : 'Save Token';
+        }
+
+        function updateDownloadButtonState() {
+            const btn = document.getElementById('downloadBtn');
+            const canDownload = patSaved && selectedId && selectedFolder;
+            btn.disabled = !canDownload;
+        }
 
         function savePat() {
             const pat = document.getElementById('patInput').value;
@@ -490,7 +499,8 @@ export class FigmaViewProvider implements vscode.WebviewViewProvider {
             document.getElementById('linkNameInput').value = '';
         }
 
-        function removeLink(id) {
+        function removeLink(id, event) {
+            event.stopPropagation();
             if (confirm('Are you sure you want to remove this link?')) {
                 vscode.postMessage({ type: 'removeLink', id });
             }
@@ -519,18 +529,13 @@ export class FigmaViewProvider implements vscode.WebviewViewProvider {
             vscode.postMessage({ type: 'download', folder: selectedFolder });
         }
 
-        function setView(view) {
-            cardView = view;
-            renderLinks();
-        }
-
         function renderLinks() {
             const container = document.getElementById('linksContainer');
             container.innerHTML = '';
             
             currentLinks.forEach(link => {
                 const card = document.createElement('div');
-                card.className = \`link-card \${cardView}\`;
+                card.className = 'link-card';
                 if (link.id === selectedId) {
                     card.classList.add('selected');
                 }
@@ -542,16 +547,13 @@ export class FigmaViewProvider implements vscode.WebviewViewProvider {
                             <div class="link-url">\${escapeHtml(link.url)}</div>
                         </div>
                         <div class="link-actions">
-                            <button onclick="selectLink('\${link.id}')">Select</button>
-                            <button onclick="removeLink('\${link.id}')">Remove</button>
+                            <button onclick="removeLink('\${link.id}', event)">Remove</button>
                         </div>
                     </div>
                 \`;
                 
-                card.onclick = (e) => {
-                    if (!e.target.closest('.link-actions')) {
-                        selectLink(link.id);
-                    }
+                card.onclick = () => {
+                    selectLink(link.id);
                 };
                 
                 container.appendChild(card);

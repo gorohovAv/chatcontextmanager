@@ -93,7 +93,11 @@ export async function getFigmaFileJson(
 	);
 
 	await fs.mkdir(path.dirname(outputPath), { recursive: true });
-	await fs.writeFile(outputPath, JSON.stringify(data, null, 2), 'utf-8');
+	
+	// Записываем JSON без форматирования для экономии памяти
+	// Используем компактную запись вместо JSON.stringify(data, null, 2)
+	const jsonString = JSON.stringify(data);
+	await fs.writeFile(outputPath, jsonString, 'utf-8');
 
 	return outputPath;
 }
@@ -186,7 +190,7 @@ export async function getFigmaVariables(
 	);
 
 	await fs.mkdir(path.dirname(outputPath), { recursive: true });
-	await fs.writeFile(outputPath, JSON.stringify(data, null, 2), 'utf-8');
+	await fs.writeFile(outputPath, JSON.stringify(data), 'utf-8');
 
 	return outputPath;
 }
@@ -208,7 +212,7 @@ export async function getFigmaStyles(
 	);
 
 	await fs.mkdir(path.dirname(outputPath), { recursive: true });
-	await fs.writeFile(outputPath, JSON.stringify(data, null, 2), 'utf-8');
+	await fs.writeFile(outputPath, JSON.stringify(data), 'utf-8');
 
 	return outputPath;
 }
@@ -230,7 +234,7 @@ export async function getFigmaComments(
 	);
 
 	await fs.mkdir(path.dirname(outputPath), { recursive: true });
-	await fs.writeFile(outputPath, JSON.stringify(data, null, 2), 'utf-8');
+	await fs.writeFile(outputPath, JSON.stringify(data), 'utf-8');
 
 	return outputPath;
 }
@@ -252,7 +256,7 @@ export async function getFigmaVersions(
 	);
 
 	await fs.mkdir(path.dirname(outputPath), { recursive: true });
-	await fs.writeFile(outputPath, JSON.stringify(data, null, 2), 'utf-8');
+	await fs.writeFile(outputPath, JSON.stringify(data), 'utf-8');
 
 	return outputPath;
 }
