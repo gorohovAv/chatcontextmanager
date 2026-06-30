@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
 import { getFigmaFileJson, getFigmaImages } from './figmaGetLib';
+import { optimizeFigmaJsonToJsonPath } from './figmaOptimization';
 
 interface FigmaLink {
     id: string;
@@ -88,6 +89,10 @@ export class FigmaViewProvider implements vscode.WebviewViewProvider {
 
                 case 'download':
                     await this._downloadLayout(data.folder);
+                    break;
+
+                case 'optimizeLayout':
+                    await this._optimizeLayout(data.folder);
                     break;
             }
         });
@@ -197,6 +202,65 @@ export class FigmaViewProvider implements vscode.WebviewViewProvider {
         }
     }
 
+    private async _optimizeLayout(folderPath: string) {
+        if (!folderPath) {
+            vscode.window.showErrorMessage('❌ No folder selected!');
+            return;
+        }
+
+        const fs = await import('fs/promises');
+        const jsonPath = path.join(folderPath, 'figma_layout.json');
+        const outputPath = path.join(folderPath, 'figma_layout.md');
+
+        try {
+            // Check if JSON file exists
+            try {
+                await fs.access(jsonPath);
+            } catch {
+                vscode.window.showErrorMessage('❌ figma_layout.json not found in selected folder!');
+                return;
+            }
+
+            this._view?.webview.postMessage({ type: 'optimizeStatus', text: '🔧 Starting optimization...' });
+
+            const result = await optimizeFigmaJsonToJsonPath(jsonPath, outputPath);
+
+            if (result.success) {
+                this._view?.webview.postMessage({ 
+                    type: 'optimizeStatus', 
+                    text: `✓ Optimization complete!` 
+                });
+                if (result.stats) {
+                    this._view?.webview.postMessage({ 
+                        type: 'optimizeStatus', 
+                        text: `  Original: ${result.stats.originalSize}` 
+                    });
+                    this._view?.webview.postMessage({ 
+                        type: 'optimizeStatus', 
+                        text: `  Optimized: ${result.stats.optimizedSize}` 
+                    });
+                    this._view?.webview.postMessage({ 
+                        type: 'optimizeStatus', 
+                        text: `  Compression: ${result.stats.compressionRatio}` 
+                    });
+                }
+                this._view?.webview.postMessage({ type: 'optimizeComplete' });
+                vscode.window.showInformationMessage('✅ Layout optimized successfully!');
+            } else {
+                this._view?.webview.postMessage({ 
+                    type: 'optimizeStatus', 
+                    text: `❌ ${result.message}` 
+                });
+                vscode.window.showErrorMessage(`❌ Optimization failed: ${result.message}`);
+            }
+
+        } catch (error: any) {
+            const errorMessage = error.message || 'Unknown error';
+            this._view?.webview.postMessage({ type: 'optimizeError', error: errorMessage });
+            vscode.window.showErrorMessage(`❌ Optimization failed: ${errorMessage}`);
+        }
+    }
+
     private _extractFileKey(url: string): string | null {
         const match = url.match(/figma\.com\/(?:file|design)\/([a-zA-Z0-9]+)/);
         return match ? match[1] : null;
@@ -245,6 +309,7 @@ export class FigmaViewProvider implements vscode.WebviewViewProvider {
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Figma Layout Downloader</title>
     <style>
+
         body {
             font-family: var(--vscode-font-family);
             padding: 16px;
@@ -269,6 +334,13 @@ export class FigmaViewProvider implements vscode.WebviewViewProvider {
             display: block;
             margin-bottom: 8px;
             font-weight: 500;
+        }
+        
+        .div-hint {
+            font-size: 0.75em;
+            color: var(--vscode-descriptionForeground);
+            white-space: nowrap;
+            overflow: hidden;
         }
         
         input[type="text"],
@@ -322,7 +394,7 @@ export class FigmaViewProvider implements vscode.WebviewViewProvider {
             border-radius: 6px;
             cursor: pointer;
             transition: all 0.2s;
-            width: 100%;
+            width: 90%;
         }
         
         .link-card:hover {
@@ -418,7 +490,7 @@ export class FigmaViewProvider implements vscode.WebviewViewProvider {
 <body>
     <div class="section">
         <h3>🔑 Figma Personal Access Token</h3>
-        <label for="patInput">Enter your Figma PAT:</label>
+        <label for="patInput">Enter your Figma PAT(Help and account -> Account settings -> Security):</label>
         <input type="password" id="patInput" placeholder="figd_...">
         <button id="savePatBtn" onclick="savePat()">Save Token</button>
     </div>
@@ -431,6 +503,7 @@ export class FigmaViewProvider implements vscode.WebviewViewProvider {
         <button onclick="addLink()">Add Link</button>
         
         <div class="links-container" id="linksContainer"></div>
+        <div class="div-hint">Using small buffers for screens is strongly recomended. Figma jsons are large</div>
     </div>
 
     <div class="section">
@@ -441,8 +514,9 @@ export class FigmaViewProvider implements vscode.WebviewViewProvider {
     </div>
 
     <div class="section">
-        <h3>⬇️ Download</h3>
+        <h3>Download</h3>
         <button id="downloadBtn" onclick="download()" disabled>Download Layout</button>
+        <button id="optimizeBtn" onclick="optimizeLayout()" class="secondary" disabled>Optimize Layout</button>
         <div class="status" id="statusDisplay"></div>
         <div class="progress-bar" id="progressBar" style="display: none;">
             <div class="progress-fill" id="progressFill" style="width: 0%;">0%</div>
@@ -511,6 +585,20 @@ export class FigmaViewProvider implements vscode.WebviewViewProvider {
                     document.getElementById('statusDisplay').textContent += '\\n❌ Error: ' + message.error;
                     document.getElementById('progressBar').style.display = 'none';
                     break;
+
+                case 'optimizeStatus':
+                    const optStatusDiv = document.getElementById('statusDisplay');
+                    optStatusDiv.textContent += message.text + '\\n';
+                    optStatusDiv.scrollTop = optStatusDiv.scrollHeight;
+                    break;
+
+                case 'optimizeComplete':
+                    document.getElementById('statusDisplay').textContent += '\\n✅ Optimization complete!';
+                    break;
+
+                case 'optimizeError':
+                    document.getElementById('statusDisplay').textContent += '\\n❌ Optimization Error: ' + message.error;
+                    break;
             }
         });
 
@@ -520,9 +608,12 @@ export class FigmaViewProvider implements vscode.WebviewViewProvider {
         }
 
         function updateDownloadButtonState() {
-            const btn = document.getElementById('downloadBtn');
+            const downloadBtn = document.getElementById('downloadBtn');
+            const optimizeBtn = document.getElementById('optimizeBtn');
             const canDownload = patSaved && selectedId && selectedFolder;
-            btn.disabled = !canDownload;
+            const canOptimize = !!selectedFolder;
+            downloadBtn.disabled = !canDownload;
+            optimizeBtn.disabled = !canOptimize;
         }
 
         function savePat() {
@@ -573,6 +664,16 @@ export class FigmaViewProvider implements vscode.WebviewViewProvider {
             document.getElementById('statusDisplay').textContent = '';
             document.getElementById('progressBar').style.display = 'none';
             vscode.postMessage({ type: 'download', folder: selectedFolder });
+        }
+
+        function optimizeLayout() {
+            if (!selectedFolder) {
+                alert('Please select a folder first');
+                return;
+            }
+            
+            document.getElementById('statusDisplay').textContent = '';
+            vscode.postMessage({ type: 'optimizeLayout', folder: selectedFolder });
         }
 
         function renderLinks() {
