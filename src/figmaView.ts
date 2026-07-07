@@ -88,7 +88,7 @@ export class FigmaViewProvider implements vscode.WebviewViewProvider {
                     break;
 
                 case 'download':
-                    await this._downloadLayout(data.folder);
+                    await this._downloadLayout(data.folder, data.includeImages);
                     break;
 
                 case 'optimizeLayout':
@@ -117,7 +117,7 @@ export class FigmaViewProvider implements vscode.WebviewViewProvider {
         }
     }
 
-    private async _downloadLayout(folderPath: string) {
+    private async _downloadLayout(folderPath: string, includeImages: boolean = true) {
         const pat = await this.context.secrets.get('figmaPat');
         const selectedId = this.context.globalState.get<string>('selectedFigmaLink');
         const links = await this._getLinks();
@@ -153,43 +153,47 @@ export class FigmaViewProvider implements vscode.WebviewViewProvider {
             await getFigmaFileJson(fileKey, pat, jsonPath, { geometry: true, pluginData: true });
             this._view?.webview.postMessage({ type: 'downloadStatus', text: '✓ Layout JSON downloaded' });
 
-            // Step 2: Extract node IDs from JSON for images
-            this._view?.webview.postMessage({ type: 'downloadStatus', text: 'Extracting image nodes...' });
-            const fs = await import('fs/promises');
-            const jsonData = JSON.parse(await fs.readFile(jsonPath, 'utf-8'));
-            const nodeIds = this._extractImageNodes(jsonData);
-            
-            if (nodeIds.length === 0) {
-                this._view?.webview.postMessage({ type: 'downloadStatus', text: '⚠ No image nodes found' });
-            } else {
-                this._view?.webview.postMessage({ 
-                    type: 'downloadStatus', 
-                    text: `Found ${nodeIds.length} image nodes` 
-                });
+            if (includeImages) {
+                // Step 2: Extract node IDs from JSON for images
+                this._view?.webview.postMessage({ type: 'downloadStatus', text: 'Extracting image nodes...' });
+                const fs = await import('fs/promises');
+                const jsonData = JSON.parse(await fs.readFile(jsonPath, 'utf-8'));
+                const nodeIds = this._extractImageNodes(jsonData);
+                
+                if (nodeIds.length === 0) {
+                    this._view?.webview.postMessage({ type: 'downloadStatus', text: '⚠ No image nodes found' });
+                } else {
+                    this._view?.webview.postMessage({ 
+                        type: 'downloadStatus', 
+                        text: `Found ${nodeIds.length} image nodes` 
+                    });
 
-                // Step 3: Download images with progress tracking
-                this._view?.webview.postMessage({ type: 'downloadStatus', text: 'Downloading images...' });
-                const imagesDir = path.join(folderPath, 'images');
-                const savedImages = await getFigmaImages(
-                    fileKey, 
-                    pat, 
-                    nodeIds, 
-                    imagesDir,
-                    { format: 'png', scale: 2 },
-                    (batchIndex, totalBatches, downloadedCount, totalCount) => {
-                        this._view?.webview.postMessage({ 
-                            type: 'downloadProgress', 
-                            batchIndex, 
-                            totalBatches, 
-                            downloadedCount, 
-                            totalCount 
-                        });
-                    }
-                );
-                this._view?.webview.postMessage({ 
-                    type: 'downloadStatus', 
-                    text: `✓ Downloaded ${savedImages.length} images` 
-                });
+                    // Step 3: Download images with progress tracking
+                    this._view?.webview.postMessage({ type: 'downloadStatus', text: 'Downloading images...' });
+                    const imagesDir = path.join(folderPath, 'images');
+                    const savedImages = await getFigmaImages(
+                        fileKey, 
+                        pat, 
+                        nodeIds, 
+                        imagesDir,
+                        { format: 'png', scale: 2 },
+                        (batchIndex, totalBatches, downloadedCount, totalCount) => {
+                            this._view?.webview.postMessage({ 
+                                type: 'downloadProgress', 
+                                batchIndex, 
+                                totalBatches, 
+                                downloadedCount, 
+                                totalCount 
+                            });
+                        }
+                    );
+                    this._view?.webview.postMessage({ 
+                        type: 'downloadStatus', 
+                        text: `✓ Downloaded ${savedImages.length} images` 
+                    });
+                }
+            } else {
+                this._view?.webview.postMessage({ type: 'downloadStatus', text: 'ℹ Skipping images download (unchecked)' });
             }
 
             this._view?.webview.postMessage({ type: 'downloadComplete' });
@@ -341,6 +345,8 @@ export class FigmaViewProvider implements vscode.WebviewViewProvider {
             color: var(--vscode-descriptionForeground);
             white-space: nowrap;
             overflow: hidden;
+            margin-bottom: 12px;
+            margin-top: 12px
         }
         
         input[type="text"],
@@ -515,6 +521,11 @@ export class FigmaViewProvider implements vscode.WebviewViewProvider {
 
     <div class="section">
         <h3>Download</h3>
+        <label style="display: flex; align-items: center; margin-bottom: 12px;">
+            <input type="checkbox" id="downloadImages" style="margin-right: 8px;">
+            Include Images
+        </label>
+        <div class="div-hint">Check with caution. Figma unloads a lot of images and fragments</div>
         <button id="downloadBtn" onclick="download()" disabled>Download Layout</button>
         <button id="optimizeBtn" onclick="optimizeLayout()" class="secondary" disabled>Optimize Layout</button>
         <div class="status" id="statusDisplay"></div>
@@ -661,9 +672,11 @@ export class FigmaViewProvider implements vscode.WebviewViewProvider {
                 return;
             }
             
+            const includeImages = document.getElementById('downloadImages').checked;
+            
             document.getElementById('statusDisplay').textContent = '';
             document.getElementById('progressBar').style.display = 'none';
-            vscode.postMessage({ type: 'download', folder: selectedFolder });
+            vscode.postMessage({ type: 'download', folder: selectedFolder, includeImages });
         }
 
         function optimizeLayout() {

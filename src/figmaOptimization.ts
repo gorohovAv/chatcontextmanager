@@ -15,7 +15,7 @@ const BLACKLIST = new Set([
     'minHeight', 'maxHeight', 'clipsContent',
     'background', 'itemSpacing', 'counterAxisSpacing',
     'layoutPositioning', 'layoutSizingHorizontal',
-    'layoutSizingVertical', 'overflowDirection',
+    'layoutSizingVertical', 'overflowDirection', 'vectorNetwork', 'complexStrokeProperties'
 ]);
 
 const TYPE_MAP: Record<string, string> = {
@@ -205,7 +205,14 @@ export async function optimizeFigmaJsonToJsonPath(
         
         // Add header
         const header = `# Figma Layout: ${jsonData.name || 'Unknown'}\n\n`;
-        const fullMarkdown = header + markdown;
+        let fullMarkdown = header + markdown;
+
+        fullMarkdown = fullMarkdown
+            .replace(/\s*\w+=\[object Object\]/g, '')   
+            .replace(/\s*\w+=\[[object Object\]]/g, '')   
+            .replace(/\s*\w+=\[object Array\]/g, '')    
+            .replace(/\s*\w+=undefined/g, '')           
+            .replace(/\s*\w+=null/g, '')                
         
         // Write output
         await fs.writeFile(outputPath, fullMarkdown, 'utf-8');
