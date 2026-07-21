@@ -145,19 +145,14 @@ export function getMainWebview(safeSystemPrompt: string, safeProjectPrompt: stri
                 </div>
             </details>
 
-            <div class="checkbox-container">
-                <input type="checkbox" id="includeSystemPrompts" checked>
-                <label for="includeSystemPrompts">Include System & Project Prompts</label>
-            </div>
-            <div class="checkbox-container">
-                <input type="checkbox" id="includeFullTextOps" checked>
-                <label for="includeFullTextOps">Include FullTextOps Instructions</label>
-            </div>
-
             <button id="clearBtn" class="secondary" style="margin-top: 10px;"><svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
   <path d="M5.5 5.5A.5.5 0 0 1 6 6v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5Zm2.5 0a.5.5 0 0 1 .5.5v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5Zm3 .5a.5.5 0 0 0-1 0v6a.5.5 0 0 0 1 0V6Z"/>
   <path d="M14.5 3a1 1 0 0 1-1 1H13v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V4h-.5a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1H6a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1h3.5a1 1 0 0 1 1 1v1ZM4.118 4 4 4.059V13a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V4.059L11.882 4H4.118ZM2.5 3h11V2h-11v1Z"/>
 </svg> Clear form</button>
+            <div class="checkbox-container">
+                <input type="checkbox" id="includeSystemPrompts" checked>
+                <label for="includeSystemPrompts">Include System & Project Prompts</label>
+            </div>
 
             <div class="mode-switcher">
                 <button class="mode-btn" data-mode="edit">Edit</button>
@@ -230,7 +225,6 @@ export function getMainWebview(safeSystemPrompt: string, safeProjectPrompt: stri
                 document.getElementById('customPrompt').value = ${safeCustomPrompt};
 
                 const includeSystemPromptsEl = document.getElementById('includeSystemPrompts');
-                const includeFullTextOpsEl = document.getElementById('includeFullTextOps');
 
                 // Mode switcher logic
                 const modeButtons = document.querySelectorAll('.mode-btn');
@@ -315,7 +309,6 @@ export function getMainWebview(safeSystemPrompt: string, safeProjectPrompt: stri
                 });
 
                 includeSystemPromptsEl.addEventListener('change', () => { requestCharCount(); });
-                includeFullTextOpsEl.addEventListener('change', () => { requestCharCount(); });
 
                 gitCommitCountEl.addEventListener('input', (e) => {
                     e.target.value = e.target.value.replace(/\\D/g, '');
@@ -392,8 +385,7 @@ export function getMainWebview(safeSystemPrompt: string, safeProjectPrompt: stri
                         includeDb: includeDbEl.checked,
                         includeGitHistory: includeGitHistoryEl.checked && gitHistoryLoaded,
                         gitCommitCount: gitCommitCountEl.value,
-                        includeSystemPrompts: includeSystemPromptsEl.checked,
-                        includeFullTextOps: includeFullTextOpsEl.checked
+                        includeSystemPrompts: includeSystemPromptsEl.checked
                     });
                 }
 
@@ -414,8 +406,7 @@ export function getMainWebview(safeSystemPrompt: string, safeProjectPrompt: stri
                         includeDb: includeDbEl.checked,
                         includeGitHistory: includeGitHistoryEl.checked && gitHistoryLoaded,
                         gitCommitCount: gitCommitCountEl.value,
-                        includeSystemPrompts: includeSystemPromptsEl.checked,
-                        includeFullTextOps: includeFullTextOpsEl.checked
+                        includeSystemPrompts: includeSystemPromptsEl.checked
                     });
                 });
 
@@ -444,7 +435,6 @@ export function getMainWebview(safeSystemPrompt: string, safeProjectPrompt: stri
                     vscode.postMessage({ type: 'saveUserText', text: '' });
 
                     includeSystemPromptsEl.checked = true;
-                    includeFullTextOpsEl.checked = true;
 
                     includeTreeEl.checked = false;
                     updateTreeSettingsVisibility();

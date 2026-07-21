@@ -182,9 +182,13 @@ class PromptBuilderViewProvider implements vscode.WebviewViewProvider {
                     }
                     break;
                 case 'compileAndCopy':
+                    const includeSysPromptsCompile = data.includeSystemPrompts === true;
+                    const sysPromptCompile = includeSysPromptsCompile ? this.sysPromptManager.getActiveSystemPrompt() : '';
+                    const projPromptCompile = includeSysPromptsCompile ? this.sysPromptManager.getProjectPrompt() : '';
+                    
                     let finalPrompt = await this.payloadManager.compileFullPrompt(
-                        this.sysPromptManager.getActiveSystemPrompt(),
-                        this.sysPromptManager.getProjectPrompt(),
+                        sysPromptCompile,
+                        projPromptCompile,
                         data.text,
                         {
                             includeTree: data.includeTree,
@@ -246,9 +250,13 @@ class PromptBuilderViewProvider implements vscode.WebviewViewProvider {
                     });
                     break;
                 case 'requestCharCount':
+                    const includeSysPromptsCount = data.includeSystemPrompts === true;
+                    const sysPromptCount = includeSysPromptsCount ? this.sysPromptManager.getActiveSystemPrompt() : '';
+                    const projPromptCount = includeSysPromptsCount ? this.sysPromptManager.getProjectPrompt() : '';
+                    
                     let length = await this.payloadManager.getCompiledPromptLength(
-                        this.sysPromptManager.getActiveSystemPrompt(),
-                        this.sysPromptManager.getProjectPrompt(),
+                        sysPromptCount,
+                        projPromptCount,
                         data.userText || '',
                         {
                             includeTree: !!data.includeTree,
