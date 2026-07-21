@@ -10,6 +10,7 @@ import { PayloadManager, FileInfo } from './payload';
 import { LogInterceptorViewProvider } from './logInterceptor';
 import { SettingsViewProvider } from './settingsView';
 import { FigmaViewProvider } from './figmaView';
+import { FullTextOpsViewProvider } from './fullTextOpsView';
 import { getGitHistory } from './history';
 import { getMainWebview } from './mainWebview';
 
@@ -78,6 +79,14 @@ export function activate(context: vscode.ExtensionContext) {
         { webviewOptions: { retainContextWhenHidden: true } }
     );
     context.subscriptions.push(figmaDisposable);
+
+    const fullTextOpsProvider = new FullTextOpsViewProvider(context);
+    const fullTextOpsDisposable = vscode.window.registerWebviewViewProvider(
+        FullTextOpsViewProvider.viewType,
+        fullTextOpsProvider,
+        { webviewOptions: { retainContextWhenHidden: true } }
+    );
+    context.subscriptions.push(fullTextOpsDisposable);
 }
 
 class PromptBuilderViewProvider implements vscode.WebviewViewProvider {
@@ -407,7 +416,6 @@ class PromptBuilderViewProvider implements vscode.WebviewViewProvider {
             let cleanUri = connStr;
             let schema = 'current_schema()';
 
-            // Extract schema from URI parameters to avoid psql errors and use it in query
             const schemaMatch = connStr.match(/[?&](schema|search_path|currentSchema)=([^&]+)/);
             if (schemaMatch) {
                 schema = `'${decodeURIComponent(schemaMatch[2]).replace(/'/g, "''")}'`;
