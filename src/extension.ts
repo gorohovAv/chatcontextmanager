@@ -45,22 +45,6 @@ function findCliTool(toolName: string): string {
     return toolName;
 }
 
-function getFullTextOpsInstruction(mode: string): string {
-    let instruction = `\n\n# FullTextOps Instructions\n`;
-    instruction += `You can use the following XML formats for operations:\n\n`;
-    instruction += `## Hunt Plan (grep list)\n`;
-    instruction += `Use this to search for patterns or ranges in files.\n`;
-    instruction += `<?xml version="1.0" encoding="UTF-8"?>\n<hunt-plan>\n    <meta>\n        <id>issue-42</id>\n        <root>./src</root>\n    </meta>\n\n    <!-- Поиск одиночного паттерна -->\n    <block type="single">\n        <file_types>.py .ts</file_types>\n        <exclude>node_modules __pycache__ .git</exclude>\n        <pattern>user_id</pattern>\n        <before>5</before>\n        <after>5</after>\n        <max_results>20</max_results>\n    </block>\n\n    <!-- Поиск диапазона между start и end -->\n    <block type="range">\n        <file_types>.py</file_types>\n        <exclude>node_modules __pycache__ .git</exclude>\n        <start>def calculate_total</start>\n        <end>^\\s*return</end>\n        <before>2</before>\n        <after>2</after>\n        <max_results>10</max_results>\n    </block>\n</hunt-plan>\n`;
-
-    if (mode === 'edit' || mode === 'custom') {
-        instruction += `\n## Patch (XML changes)\n`;
-        instruction += `Use this to apply full file replacements or partial replacements.\n`;
-        instruction += `<?xml version="1.0" encoding="UTF-8"?>\n<patch>\n    \n    <!-- Полная замена файла -->\n    <file path="src/config.yml">\n        <![CDATA[\nserver:\n  port: 9090\n  host: localhost\n]]>\n    </file>\n\n    <!-- Замена фрагмента в файле -->\n    <replace path="src/app.py">\n        <from><![CDATA[\ndef old_function():\n    pass\n]]></from>\n        <to><![CDATA[\ndef new_function():\n    print("Updated")\n    return True\n]]></to>\n    </replace>\n\n    <!-- Несколько замен в одном файле -->\n    <replace path="src/config.xml">\n        <from><![CDATA[<port>8080</port>]]></from>\n        <to><![CDATA[<port>9090</port>]]></to>\n    </replace>\n\n    <replace path="src/config.xml">\n        <from><![CDATA[<debug>true</debug>]]></from>\n        <to><![CDATA[<debug>false</debug>]]></to>\n    </replace>\n\n</patch>\n`;
-    }
-
-    return instruction;
-}
-
 export function activate(context: vscode.ExtensionContext) {
     console.log('🚀 [МОЕ РАСШИРЕНИЕ] Функция activate() вызвана!');
 
@@ -242,13 +226,9 @@ class PromptBuilderViewProvider implements vscode.WebviewViewProvider {
                     }
                     break;
                 case 'compileAndCopy':
-                    const includeSysPrompts = data.includeSystemPrompts !== false;
-                    const activeSystemPrompt = includeSysPrompts ? this.sysPromptManager.getActiveSystemPrompt() : '';
-                    const projectPrompt = includeSysPrompts ? this.sysPromptManager.getProjectPrompt() : '';
-
                     let finalPrompt = await this.payloadManager.compileFullPrompt(
-                        activeSystemPrompt,
-                        projectPrompt,
+                        this.sysPromptManager.getActiveSystemPrompt(),
+                        this.sysPromptManager.getProjectPrompt(),
                         data.text,
                         {
                             includeTree: data.includeTree,
@@ -257,10 +237,6 @@ class PromptBuilderViewProvider implements vscode.WebviewViewProvider {
                             getProjectTree: (opts) => this.treeManager.getProjectTree(opts)
                         }
                     );
-                    
-                    if (data.includeFullTextOps) {
-                        finalPrompt += getFullTextOpsInstruction(this.sysPromptManager.getCurrentMode());
-                    }
                     
                     if (data.includeGitHistory && this._gitHistory) {
                         const commitCount = parseInt(data.gitCommitCount) || 5;
@@ -314,13 +290,9 @@ class PromptBuilderViewProvider implements vscode.WebviewViewProvider {
                     });
                     break;
                 case 'requestCharCount':
-                    const includeSysPromptsLen = data.includeSystemPrompts !== false;
-                    const activeSystemPromptLen = includeSysPromptsLen ? this.sysPromptManager.getActiveSystemPrompt() : '';
-                    const projectPromptLen = includeSysPromptsLen ? this.sysPromptManager.getProjectPrompt() : '';
-
                     let length = await this.payloadManager.getCompiledPromptLength(
-                        activeSystemPromptLen,
-                        projectPromptLen,
+                        this.sysPromptManager.getActiveSystemPrompt(),
+                        this.sysPromptManager.getProjectPrompt(),
                         data.userText || '',
                         {
                             includeTree: !!data.includeTree,
@@ -330,10 +302,6 @@ class PromptBuilderViewProvider implements vscode.WebviewViewProvider {
                         }
                     );
                     
-                    if (data.includeFullTextOps) {
-                        length += getFullTextOpsInstruction(this.sysPromptManager.getCurrentMode()).length;
-                    }
-
                     if (data.includeGitHistory && this._gitHistory) {
                         const commitCount = parseInt(data.gitCommitCount) || 5;
                         length += `\n\n# Git History (last ${commitCount} commits)\n${this._gitHistory}`.length;

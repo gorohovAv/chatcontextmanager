@@ -1,7 +1,7 @@
 export function getMainWebview(safeSystemPrompt: string, safeProjectPrompt: string, safeUserText: string, safeFilesInfo: string, safeTreeSettings: string, safeAskPrompt: string, safeCustomPrompt: string, safeCurrentMode: string): string {
 
     return `<!DOCTYPE html>
-        <html lang="en">
+        <html lang="ru">
         <head>
             <meta charset="UTF-8">
             <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -53,7 +53,7 @@ export function getMainWebview(safeSystemPrompt: string, safeProjectPrompt: stri
                 .action-btn:hover { background: var(--vscode-list-activeSelectionBackground); }
                 .remove-btn { color: var(--vscode-errorForeground); }
                 #fileList { margin-bottom: 15px; max-height: 200px; overflow-y: auto; }
-                details { margin-bottom: 10px; }
+                details { margin-bottom: 15px; }
                 summary { 
                     cursor: pointer; padding: 8px; 
                     background: var(--vscode-button-secondaryBackground); color: var(--vscode-button-secondaryForeground);
@@ -129,15 +129,6 @@ export function getMainWebview(safeSystemPrompt: string, safeProjectPrompt: stri
                 </div>
             </details>
 
-            <div class="checkbox-container">
-                <input type="checkbox" id="includeSystemPrompts" checked>
-                <label for="includeSystemPrompts">Include System & Project Prompts</label>
-            </div>
-            <div class="checkbox-container">
-                <input type="checkbox" id="includeFullTextOps" checked>
-                <label for="includeFullTextOps">Include FullTextOps Instructions</label>
-            </div>
-
             <button id="clearBtn" class="secondary" style="margin-top: 10px;">🗑️ Clear form</button>
 
             <div class="mode-switcher">
@@ -206,9 +197,6 @@ export function getMainWebview(safeSystemPrompt: string, safeProjectPrompt: stri
                 document.getElementById('userText').value = ${safeUserText};
                 document.getElementById('askPrompt').value = ${safeAskPrompt};
                 document.getElementById('customPrompt').value = ${safeCustomPrompt};
-
-                const includeSystemPromptsEl = document.getElementById('includeSystemPrompts');
-                const includeFullTextOpsEl = document.getElementById('includeFullTextOps');
 
                 // Mode switcher logic
                 const modeButtons = document.querySelectorAll('.mode-btn');
@@ -292,10 +280,8 @@ export function getMainWebview(safeSystemPrompt: string, safeProjectPrompt: stri
                     requestCharCount();
                 });
 
-                includeSystemPromptsEl.addEventListener('change', () => { requestCharCount(); });
-                includeFullTextOpsEl.addEventListener('change', () => { requestCharCount(); });
-
                 gitCommitCountEl.addEventListener('input', (e) => {
+                    // Разрешаем ввод только цифр
                     e.target.value = e.target.value.replace(/\\D/g, '');
                     gitHistoryLoaded = false;
                     gitHistoryStatusEl.textContent = '';
@@ -369,9 +355,7 @@ export function getMainWebview(safeSystemPrompt: string, safeProjectPrompt: stri
                         customIgnore: customIgnoreEl.value,
                         includeDb: includeDbEl.checked,
                         includeGitHistory: includeGitHistoryEl.checked && gitHistoryLoaded,
-                        gitCommitCount: gitCommitCountEl.value,
-                        includeSystemPrompts: includeSystemPromptsEl.checked,
-                        includeFullTextOps: includeFullTextOpsEl.checked
+                        gitCommitCount: gitCommitCountEl.value
                     });
                 }
 
@@ -391,9 +375,7 @@ export function getMainWebview(safeSystemPrompt: string, safeProjectPrompt: stri
                         customIgnore: customIgnoreEl.value,
                         includeDb: includeDbEl.checked,
                         includeGitHistory: includeGitHistoryEl.checked && gitHistoryLoaded,
-                        gitCommitCount: gitCommitCountEl.value,
-                        includeSystemPrompts: includeSystemPromptsEl.checked,
-                        includeFullTextOps: includeFullTextOpsEl.checked
+                        gitCommitCount: gitCommitCountEl.value
                     });
                 });
 
@@ -418,30 +400,32 @@ export function getMainWebview(safeSystemPrompt: string, safeProjectPrompt: stri
                 });
 
                 document.getElementById('clearBtn').addEventListener('click', () => {
+                    // Clear user text
                     document.getElementById('userText').value = '';
                     vscode.postMessage({ type: 'saveUserText', text: '' });
 
-                    includeSystemPromptsEl.checked = true;
-                    includeFullTextOpsEl.checked = true;
-
+                    // Clear tree settings
                     includeTreeEl.checked = false;
                     updateTreeSettingsVisibility();
                     useGitignoreEl.checked = false;
                     customIgnoreEl.value = '';
                     saveTreeSettingsDebounced();
 
+                    // Clear DB settings
                     includeDbEl.checked = false;
                     dbSettingsEl.classList.add('hidden');
                     selectedDbAliases.clear();
                     dbStructureStatusEl.textContent = '';
                     dbConnListEl.innerHTML = '';
 
+                    // Clear Git history settings
                     includeGitHistoryEl.checked = false;
                     gitHistorySettingsEl.classList.add('hidden');
                     gitHistoryStatusEl.textContent = '';
                     gitHistoryLoaded = false;
                     gitCommitCountEl.value = '5';
 
+                    // Clear files
                     vscode.postMessage({ type: 'clearForm' });
                     files = [];
                     expandedFiles.clear();
