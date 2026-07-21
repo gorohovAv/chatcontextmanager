@@ -30,7 +30,7 @@ export class LogInterceptorManager {
     public async selectFile() {
         const uris = await vscode.window.showOpenDialog({
             canSelectMany: false,
-            openLabel: 'Выбрать файл лога',
+            openLabel: 'Select log file',
             canSelectFiles: true,
             canSelectFolders: false,
             filters: { 'Text files': ['txt', 'log'] }
@@ -58,7 +58,7 @@ export class LogInterceptorManager {
             // onDidWriteTerminalData - это proposed API, поэтому используем any
             const windowAny = vscode.window as any;
             if (typeof windowAny.onDidWriteTerminalData !== 'function') {
-                vscode.window.showErrorMessage('API onDidWriteTerminalData is not accesible. Make sure that plugin is started with proposed API (terminalDataWriteEvent).');
+                vscode.window.showErrorMessage('API onDidWriteTerminalData is not accessible. Make sure that plugin is started with proposed API (terminalDataWriteEvent).');
                 this.writeStream.end();
                 this.writeStream = undefined;
                 return;
@@ -78,7 +78,7 @@ export class LogInterceptorManager {
 
             this.isActive = true;
             this.onStateChangedEmitter.fire();
-            vscode.window.showInformationMessage('✅ Intercepting worker is running.');
+            vscode.window.showInformationMessage('Intercepting worker is running.');
         } catch (err) {
             vscode.window.showErrorMessage(`Worker error: ${err}`);
         }
@@ -98,7 +98,7 @@ export class LogInterceptorManager {
         
         this.isActive = false;
         this.onStateChangedEmitter.fire();
-        vscode.window.showInformationMessage('⏹ worker stopped.');
+        vscode.window.showInformationMessage('Worker stopped.');
     }
 
     public dispose() {
@@ -171,7 +171,7 @@ export class LogInterceptorViewProvider implements vscode.WebviewViewProvider {
 
     private _getHtmlForWebview() {
         return `<!DOCTYPE html>
-        <html lang="ru">
+        <html lang="en">
         <head>
             <meta charset="UTF-8">
             <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -187,6 +187,7 @@ export class LogInterceptorViewProvider implements vscode.WebviewViewProvider {
                     width: 100%; padding: 8px; margin-bottom: 10px; cursor: pointer;
                     background: var(--vscode-button-background); color: var(--vscode-button-foreground);
                     border: none; border-radius: 4px; font-weight: bold;
+                    display: flex; align-items: center; justify-content: center; gap: 8px;
                 }
                 button:hover { background: var(--vscode-button-hoverBackground); }
                 button.secondary { background: var(--vscode-button-secondaryBackground); color: var(--vscode-button-secondaryForeground); }
@@ -201,10 +202,16 @@ export class LogInterceptorViewProvider implements vscode.WebviewViewProvider {
         </head>
         <body>
             <label style="display: block; margin-bottom: 5px; font-weight: bold;">Log file:</label>
-            <div id="filePath" class="file-path">Not choosen</div>
-            <button id="selectFileBtn" class="secondary">📁 Pick file</button>
+            <div id="filePath" class="file-path">Not chosen</div>
+            <button id="selectFileBtn" class="secondary">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z"/></svg>
+                Pick file
+            </button>
             
-            <button id="toggleWorkerBtn">▶ Run worker</button>
+            <button id="toggleWorkerBtn">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                Run worker
+            </button>
             
             <div class="stats">
                 Strings written: <strong id="linesCount">0</strong>
@@ -228,14 +235,14 @@ export class LogInterceptorViewProvider implements vscode.WebviewViewProvider {
                     const message = event.data;
                     if (message.type === 'updateState') {
                         const state = message.state;
-                        filePathEl.textContent = state.logFilePath || 'Not choosen';
+                        filePathEl.textContent = state.logFilePath || 'Not chosen';
                         linesCountEl.textContent = state.linesWritten.toLocaleString();
                         
                         if (state.isActive) {
-                            toggleWorkerBtn.textContent = '⏹ Stop worker';
+                            toggleWorkerBtn.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/></svg> Stop worker';
                             toggleWorkerBtn.classList.add('stop');
                         } else {
-                            toggleWorkerBtn.textContent = '▶ Run worker';
+                            toggleWorkerBtn.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"/></svg> Run worker';
                             toggleWorkerBtn.classList.remove('stop');
                         }
                     }

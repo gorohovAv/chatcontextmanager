@@ -110,6 +110,7 @@ export class SettingsViewProvider implements vscode.WebviewViewProvider {
                     padding: 6px 12px; margin: 4px 4px 4px 0; cursor: pointer;
                     background: var(--vscode-button-background); color: var(--vscode-button-foreground);
                     border: none; border-radius: 4px;
+                    display: inline-flex; align-items: center; gap: 6px;
                 }
                 button:hover { background: var(--vscode-button-hoverBackground); }
                 button.secondary { background: var(--vscode-button-secondaryBackground); color: var(--vscode-button-secondaryForeground); }
@@ -118,6 +119,11 @@ export class SettingsViewProvider implements vscode.WebviewViewProvider {
                 .conn-item {
                     display: flex; justify-content: space-between; align-items: center;
                     background: var(--vscode-list-hoverBackground); padding: 8px; border-radius: 4px; margin-bottom: 6px;
+                }
+                .conn-item-name {
+                    display: inline-flex;
+                    align-items: center;
+                    gap: 8px;
                 }
                 .conn-actions button { margin-left: 5px; padding: 4px 8px; font-size: 0.9em; }
                 .examples {
@@ -134,7 +140,10 @@ export class SettingsViewProvider implements vscode.WebviewViewProvider {
         </head>
         <body>
             <h3>Database Connections</h3>
-            <button id="addBtn">➕ Add Connection</button>
+            <button id="addBtn">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
+                Add Connection
+            </button>
             <div id="connList" style="margin-top: 10px;"></div>
 
             <h3>Connection String Examples</h3>
@@ -171,7 +180,11 @@ sqlite:///home/user/project/database.sqlite
                         div.className = 'conn-item';
                         
                         const nameSpan = document.createElement('span');
-                        nameSpan.textContent = '🔌 ' + alias;
+                        nameSpan.className = 'conn-item-name';
+                        nameSpan.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22v-5"/><path d="M9 8V2"/><path d="M15 8V2"/><path d="M18 8v5a6 6 0 0 1-6 6 6 6 0 0 1-6-6V8Z"/></svg>';
+                        const aliasText = document.createElement('span');
+                        aliasText.textContent = alias;
+                        nameSpan.appendChild(aliasText);
                         
                         const actionsDiv = document.createElement('div');
                         actionsDiv.className = 'conn-actions';

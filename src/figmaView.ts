@@ -30,7 +30,7 @@ export class FigmaViewProvider implements vscode.WebviewViewProvider {
             switch (data.type) {
                 case 'savePat':
                     await this.context.secrets.store('figmaPat', data.pat);
-                    vscode.window.showInformationMessage('✅ Figma PAT saved!');
+                    vscode.window.showInformationMessage('Figma PAT saved!');
                     this._view?.webview.postMessage({ type: 'patSaved' });
                     break;
 
@@ -124,17 +124,17 @@ export class FigmaViewProvider implements vscode.WebviewViewProvider {
         const selectedLink = links.find(l => l.id === selectedId);
 
         if (!pat) {
-            vscode.window.showErrorMessage('❌ Figma PAT is not set!');
+            vscode.window.showErrorMessage('Figma PAT is not set!');
             return;
         }
 
         if (!selectedLink) {
-            vscode.window.showErrorMessage('❌ No Figma link selected!');
+            vscode.window.showErrorMessage('No Figma link selected!');
             return;
         }
 
         if (!folderPath) {
-            vscode.window.showErrorMessage('❌ No folder selected!');
+            vscode.window.showErrorMessage('No folder selected!');
             return;
         }
 
@@ -161,7 +161,7 @@ export class FigmaViewProvider implements vscode.WebviewViewProvider {
                 const nodeIds = this._extractImageNodes(jsonData);
                 
                 if (nodeIds.length === 0) {
-                    this._view?.webview.postMessage({ type: 'downloadStatus', text: '⚠ No image nodes found' });
+                    this._view?.webview.postMessage({ type: 'downloadStatus', text: 'No image nodes found' });
                 } else {
                     this._view?.webview.postMessage({ 
                         type: 'downloadStatus', 
@@ -193,22 +193,22 @@ export class FigmaViewProvider implements vscode.WebviewViewProvider {
                     });
                 }
             } else {
-                this._view?.webview.postMessage({ type: 'downloadStatus', text: 'ℹ Skipping images download (unchecked)' });
+                this._view?.webview.postMessage({ type: 'downloadStatus', text: 'Skipping images download (unchecked)' });
             }
 
             this._view?.webview.postMessage({ type: 'downloadComplete' });
-            vscode.window.showInformationMessage('✅ Figma layout downloaded successfully!');
+            vscode.window.showInformationMessage('Figma layout downloaded successfully!');
 
         } catch (error: any) {
             const errorMessage = error.message || 'Unknown error';
             this._view?.webview.postMessage({ type: 'downloadError', error: errorMessage });
-            vscode.window.showErrorMessage(`❌ Download failed: ${errorMessage}`);
+            vscode.window.showErrorMessage(`Download failed: ${errorMessage}`);
         }
     }
 
     private async _optimizeLayout(folderPath: string) {
         if (!folderPath) {
-            vscode.window.showErrorMessage('❌ No folder selected!');
+            vscode.window.showErrorMessage('No folder selected!');
             return;
         }
 
@@ -221,11 +221,11 @@ export class FigmaViewProvider implements vscode.WebviewViewProvider {
             try {
                 await fs.access(jsonPath);
             } catch {
-                vscode.window.showErrorMessage('❌ figma_layout.json not found in selected folder!');
+                vscode.window.showErrorMessage('figma_layout.json not found in selected folder!');
                 return;
             }
 
-            this._view?.webview.postMessage({ type: 'optimizeStatus', text: '🔧 Starting optimization...' });
+            this._view?.webview.postMessage({ type: 'optimizeStatus', text: 'Starting optimization...' });
 
             const result = await optimizeFigmaJsonToJsonPath(jsonPath, outputPath);
 
@@ -249,19 +249,19 @@ export class FigmaViewProvider implements vscode.WebviewViewProvider {
                     });
                 }
                 this._view?.webview.postMessage({ type: 'optimizeComplete' });
-                vscode.window.showInformationMessage('✅ Layout optimized successfully!');
+                vscode.window.showInformationMessage('Layout optimized successfully!');
             } else {
                 this._view?.webview.postMessage({ 
                     type: 'optimizeStatus', 
-                    text: `❌ ${result.message}` 
+                    text: `✕ ${result.message}` 
                 });
-                vscode.window.showErrorMessage(`❌ Optimization failed: ${result.message}`);
+                vscode.window.showErrorMessage(`Optimization failed: ${result.message}`);
             }
 
         } catch (error: any) {
             const errorMessage = error.message || 'Unknown error';
             this._view?.webview.postMessage({ type: 'optimizeError', error: errorMessage });
-            vscode.window.showErrorMessage(`❌ Optimization failed: ${errorMessage}`);
+            vscode.window.showErrorMessage(`Optimization failed: ${errorMessage}`);
         }
     }
 
@@ -313,7 +313,6 @@ export class FigmaViewProvider implements vscode.WebviewViewProvider {
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Figma Layout Downloader</title>
     <style>
-
         body {
             font-family: var(--vscode-font-family);
             padding: 16px;
@@ -332,6 +331,16 @@ export class FigmaViewProvider implements vscode.WebviewViewProvider {
             margin-top: 0;
             margin-bottom: 12px;
             color: var(--vscode-foreground);
+        }
+
+        .icon-text {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .icon-text svg {
+            flex-shrink: 0;
         }
         
         label {
@@ -495,25 +504,34 @@ export class FigmaViewProvider implements vscode.WebviewViewProvider {
 </head>
 <body>
     <div class="section">
-        <h3>🔑 Figma Personal Access Token</h3>
-        <label for="patInput">Enter your Figma PAT(Help and account -> Account settings -> Security):</label>
+        <h3 class="icon-text">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="7.5" cy="15.5" r="5.5"/><path d="m21 2-9.6 9.6"/><path d="m15.5 7.5 3 3L22 7l-3-3"/></svg>
+            Figma Personal Access Token
+        </h3>
+        <label for="patInput">Enter your Figma PAT (Help and account -> Account settings -> Security):</label>
         <input type="password" id="patInput" placeholder="figd_...">
         <button id="savePatBtn" onclick="savePat()">Save Token</button>
     </div>
 
     <div class="section">
-        <h3>🔗 Figma Layout Links</h3>
+        <h3 class="icon-text">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+            Figma Layout Links
+        </h3>
         <label for="linkUrlInput">Add new link:</label>
         <input type="text" id="linkUrlInput" placeholder="https://www.figma.com/file/...">
         <input type="text" id="linkNameInput" placeholder="Link name (optional)">
         <button onclick="addLink()">Add Link</button>
         
         <div class="links-container" id="linksContainer"></div>
-        <div class="div-hint">Using small buffers for screens is strongly recomended. Figma jsons are large</div>
+        <div class="div-hint">Using small buffers for screens is strongly recommended. Figma jsons are large</div>
     </div>
 
     <div class="section">
-        <h3>📁 Download Location</h3>
+        <h3 class="icon-text">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z"/></svg>
+            Download Location
+        </h3>
         <label>Select folder to save layout:</label>
         <button onclick="selectFolder()">Choose Folder</button>
         <div class="folder-display" id="folderDisplay">No folder selected</div>
@@ -588,12 +606,12 @@ export class FigmaViewProvider implements vscode.WebviewViewProvider {
                     break;
                     
                 case 'downloadComplete':
-                    document.getElementById('statusDisplay').textContent += '\\n✅ Download complete!';
+                    document.getElementById('statusDisplay').textContent += '\\nDownload complete!';
                     document.getElementById('progressBar').style.display = 'none';
                     break;
                     
                 case 'downloadError':
-                    document.getElementById('statusDisplay').textContent += '\\n❌ Error: ' + message.error;
+                    document.getElementById('statusDisplay').textContent += '\\nError: ' + message.error;
                     document.getElementById('progressBar').style.display = 'none';
                     break;
 
@@ -604,11 +622,11 @@ export class FigmaViewProvider implements vscode.WebviewViewProvider {
                     break;
 
                 case 'optimizeComplete':
-                    document.getElementById('statusDisplay').textContent += '\\n✅ Optimization complete!';
+                    document.getElementById('statusDisplay').textContent += '\\nOptimization complete!';
                     break;
 
                 case 'optimizeError':
-                    document.getElementById('statusDisplay').textContent += '\\n❌ Optimization Error: ' + message.error;
+                    document.getElementById('statusDisplay').textContent += '\\nOptimization Error: ' + message.error;
                     break;
             }
         });

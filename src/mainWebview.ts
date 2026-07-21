@@ -1,7 +1,7 @@
 export function getMainWebview(safeSystemPrompt: string, safeProjectPrompt: string, safeUserText: string, safeFilesInfo: string, safeTreeSettings: string, safeAskPrompt: string, safeCustomPrompt: string, safeCurrentMode: string): string {
 
     return `<!DOCTYPE html>
-        <html lang="ru">
+        <html lang="en">
         <head>
             <meta charset="UTF-8">
             <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -17,6 +17,7 @@ export function getMainWebview(safeSystemPrompt: string, safeProjectPrompt: stri
                 textarea.small { height: 80px; }
                 textarea.ignore { height: 100px; font-family: monospace; font-size: 0.85em; }
                 button { 
+                    display: flex; align-items: center; justify-content: center; gap: 6px;
                     width: 100%; padding: 8px; margin-bottom: 10px; cursor: pointer;
                     background: var(--vscode-button-background); color: var(--vscode-button-foreground);
                     border: none; border-radius: 4px; font-weight: bold;
@@ -49,11 +50,14 @@ export function getMainWebview(safeSystemPrompt: string, safeProjectPrompt: stri
                 .sym-kind-module, .sym-kind-namespace, .sym-kind-package { background: rgba(197, 134, 192, 0.15); color: #c586c0; border: 1px solid rgba(197, 134, 192, 0.6); }
                 .sym-kind-constant { background: rgba(79, 193, 255, 0.15); color: #4fc1ff; border: 1px solid rgba(79, 193, 255, 0.6); }
                 .sym-kind-file { background: rgba(200, 200, 200, 0.15); color: #c8c8c8; border: 1px solid rgba(200, 200, 200, 0.6); }
-                .action-btn { background: transparent; width: auto; padding: 2px 6px; margin: 0; color: var(--vscode-foreground); border: none; cursor: pointer; }
+                .action-btn { 
+                    display: flex; align-items: center; justify-content: center;
+                    background: transparent; width: auto; padding: 2px 6px; margin: 0; color: var(--vscode-foreground); border: none; cursor: pointer; 
+                }
                 .action-btn:hover { background: var(--vscode-list-activeSelectionBackground); }
                 .remove-btn { color: var(--vscode-errorForeground); }
                 #fileList { margin-bottom: 15px; max-height: 200px; overflow-y: auto; }
-                details { margin-bottom: 15px; }
+                details { margin-bottom: 10px; }
                 summary { 
                     cursor: pointer; padding: 8px; 
                     background: var(--vscode-button-secondaryBackground); color: var(--vscode-button-secondaryForeground);
@@ -113,23 +117,47 @@ export function getMainWebview(safeSystemPrompt: string, safeProjectPrompt: stri
                 <div style="margin-top: 10px;">
                     <label style="display: block; margin-bottom: 5px; font-weight: bold;">Global prompt (Edit):</label>
                     <textarea id="systemPrompt" class="small" placeholder="Global prompt..."></textarea>
-                    <button id="saveSystemPromptBtn" class="secondary">💾 Save global prompt</button>
+                    <button id="saveSystemPromptBtn" class="secondary"><svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
+  <path d="M11 2H9v3h2z"/>
+  <path d="M1.5 0h11.586a1.5 1.5 0 0 1 1.06.44l1.415 1.414A1.5 1.5 0 0 1 16 2.914V14.5a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 0 14.5v-13A1.5 1.5 0 0 1 1.5 0M1 1.5v13a.5.5 0 0 0 .5.5H2v-4.5A1.5 1.5 0 0 1 3.5 9h9a1.5 1.5 0 0 1 1.5 1.5V15h.5a.5.5 0 0 0 .5-.5V2.914a.5.5 0 0 0-.146-.353l-1.415-1.415A.5.5 0 0 0 13.086 1H13v4.5A1.5 1.5 0 0 1 11.5 7h-7A1.5 1.5 0 0 1 3 5.5V1H1.5a.5.5 0 0 0-.5.5M3 2v3.5a.5.5 0 0 0 .5.5h7a.5.5 0 0 0 .5-.5V2H3z"/>
+</svg> Save global prompt</button>
                     
                     <label style="display: block; margin-bottom: 5px; font-weight: bold; margin-top: 15px;">Global prompt (Ask):</label>
                     <textarea id="askPrompt" class="small" placeholder="Global prompt for Ask mode..."></textarea>
-                    <button id="saveAskPromptBtn" class="secondary">💾 Save ask prompt</button>
+                    <button id="saveAskPromptBtn" class="secondary"><svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
+  <path d="M11 2H9v3h2z"/>
+  <path d="M1.5 0h11.586a1.5 1.5 0 0 1 1.06.44l1.415 1.414A1.5 1.5 0 0 1 16 2.914V14.5a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 0 14.5v-13A1.5 1.5 0 0 1 1.5 0M1 1.5v13a.5.5 0 0 0 .5.5H2v-4.5A1.5 1.5 0 0 1 3.5 9h9a1.5 1.5 0 0 1 1.5 1.5V15h.5a.5.5 0 0 0 .5-.5V2.914a.5.5 0 0 0-.146-.353l-1.415-1.415A.5.5 0 0 0 13.086 1H13v4.5A1.5 1.5 0 0 1 11.5 7h-7A1.5 1.5 0 0 1 3 5.5V1H1.5a.5.5 0 0 0-.5.5M3 2v3.5a.5.5 0 0 0 .5.5h7a.5.5 0 0 0 .5-.5V2H3z"/>
+</svg> Save ask prompt</button>
 
                     <label style="display: block; margin-bottom: 5px; font-weight: bold; margin-top: 15px;">Global prompt (Custom):</label>
                     <textarea id="customPrompt" class="small" placeholder="Global prompt for Custom mode..."></textarea>
-                    <button id="saveCustomPromptBtn" class="secondary">💾 Save custom prompt</button>
+                    <button id="saveCustomPromptBtn" class="secondary"><svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
+  <path d="M11 2H9v3h2z"/>
+  <path d="M1.5 0h11.586a1.5 1.5 0 0 1 1.06.44l1.415 1.414A1.5 1.5 0 0 1 16 2.914V14.5a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 0 14.5v-13A1.5 1.5 0 0 1 1.5 0M1 1.5v13a.5.5 0 0 0 .5.5H2v-4.5A1.5 1.5 0 0 1 3.5 9h9a1.5 1.5 0 0 1 1.5 1.5V15h.5a.5.5 0 0 0 .5-.5V2.914a.5.5 0 0 0-.146-.353l-1.415-1.415A.5.5 0 0 0 13.086 1H13v4.5A1.5 1.5 0 0 1 11.5 7h-7A1.5 1.5 0 0 1 3 5.5V1H1.5a.5.5 0 0 0-.5.5M3 2v3.5a.5.5 0 0 0 .5.5h7a.5.5 0 0 0 .5-.5V2H3z"/>
+</svg> Save custom prompt</button>
 
                     <label style="display: block; margin-bottom: 5px; font-weight: bold; margin-top: 15px;">Project prompt:</label>
                     <textarea id="projectPrompt" class="small" placeholder="Local prompt for this particular project..."></textarea>
-                    <button id="saveProjectPromptBtn" class="secondary">💾 Save project prompt</button>
+                    <button id="saveProjectPromptBtn" class="secondary"><svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
+  <path d="M11 2H9v3h2z"/>
+  <path d="M1.5 0h11.586a1.5 1.5 0 0 1 1.06.44l1.415 1.414A1.5 1.5 0 0 1 16 2.914V14.5a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 0 14.5v-13A1.5 1.5 0 0 1 1.5 0M1 1.5v13a.5.5 0 0 0 .5.5H2v-4.5A1.5 1.5 0 0 1 3.5 9h9a1.5 1.5 0 0 1 1.5 1.5V15h.5a.5.5 0 0 0 .5-.5V2.914a.5.5 0 0 0-.146-.353l-1.415-1.415A.5.5 0 0 0 13.086 1H13v4.5A1.5 1.5 0 0 1 11.5 7h-7A1.5 1.5 0 0 1 3 5.5V1H1.5a.5.5 0 0 0-.5.5M3 2v3.5a.5.5 0 0 0 .5.5h7a.5.5 0 0 0 .5-.5V2H3z"/>
+</svg> Save project prompt</button>
                 </div>
             </details>
 
-            <button id="clearBtn" class="secondary" style="margin-top: 10px;">🗑️ Clear form</button>
+            <div class="checkbox-container">
+                <input type="checkbox" id="includeSystemPrompts" checked>
+                <label for="includeSystemPrompts">Include System & Project Prompts</label>
+            </div>
+            <div class="checkbox-container">
+                <input type="checkbox" id="includeFullTextOps" checked>
+                <label for="includeFullTextOps">Include FullTextOps Instructions</label>
+            </div>
+
+            <button id="clearBtn" class="secondary" style="margin-top: 10px;"><svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
+  <path d="M5.5 5.5A.5.5 0 0 1 6 6v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5Zm2.5 0a.5.5 0 0 1 .5.5v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5Zm3 .5a.5.5 0 0 0-1 0v6a.5.5 0 0 0 1 0V6Z"/>
+  <path d="M14.5 3a1 1 0 0 1-1 1H13v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V4h-.5a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1H6a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1h3.5a1 1 0 0 1 1 1v1ZM4.118 4 4 4.059V13a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V4.059L11.882 4H4.118ZM2.5 3h11V2h-11v1Z"/>
+</svg> Clear form</button>
 
             <div class="mode-switcher">
                 <button class="mode-btn" data-mode="edit">Edit</button>
@@ -180,7 +208,10 @@ export function getMainWebview(safeSystemPrompt: string, safeProjectPrompt: stri
                 <div id="gitHistoryStatus" class="hint" style="margin-top: 8px;"></div>
             </div>
             
-            <button id="copyBtn">Clipboard (<span id="charCountBadge">0</span> chars)</button>
+            <button id="copyBtn"><svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
+  <path d="M4 1.5H3a2 2 0 0 0-2 2V14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V3.5a2 2 0 0 0-2-2h-1v1h1a1 1 0 0 1 1 1V14a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V3.5a1 1 0 0 1 1-1h1v-1z"/>
+  <path d="M9.5 1a.5.5 0 0 1 .5.5v1a.5.5 0 0 1-.5.5h-5a.5.5 0 0 1-.5-.5v-1a.5.5 0 0 1 .5-.5h5zM11 2.5a.5.5 0 0 1 .5-.5h1a.5.5 0 0 1 .5.5v1a.5.5 0 0 1-.5.5h-1a.5.5 0 0 1-.5-.5v-1z"/>
+</svg> Clipboard (<span id="charCountBadge">0</span> chars)</button>
 
             <script>
                 const vscode = acquireVsCodeApi();
@@ -197,6 +228,9 @@ export function getMainWebview(safeSystemPrompt: string, safeProjectPrompt: stri
                 document.getElementById('userText').value = ${safeUserText};
                 document.getElementById('askPrompt').value = ${safeAskPrompt};
                 document.getElementById('customPrompt').value = ${safeCustomPrompt};
+
+                const includeSystemPromptsEl = document.getElementById('includeSystemPrompts');
+                const includeFullTextOpsEl = document.getElementById('includeFullTextOps');
 
                 // Mode switcher logic
                 const modeButtons = document.querySelectorAll('.mode-btn');
@@ -280,8 +314,10 @@ export function getMainWebview(safeSystemPrompt: string, safeProjectPrompt: stri
                     requestCharCount();
                 });
 
+                includeSystemPromptsEl.addEventListener('change', () => { requestCharCount(); });
+                includeFullTextOpsEl.addEventListener('change', () => { requestCharCount(); });
+
                 gitCommitCountEl.addEventListener('input', (e) => {
-                    // Разрешаем ввод только цифр
                     e.target.value = e.target.value.replace(/\\D/g, '');
                     gitHistoryLoaded = false;
                     gitHistoryStatusEl.textContent = '';
@@ -355,7 +391,9 @@ export function getMainWebview(safeSystemPrompt: string, safeProjectPrompt: stri
                         customIgnore: customIgnoreEl.value,
                         includeDb: includeDbEl.checked,
                         includeGitHistory: includeGitHistoryEl.checked && gitHistoryLoaded,
-                        gitCommitCount: gitCommitCountEl.value
+                        gitCommitCount: gitCommitCountEl.value,
+                        includeSystemPrompts: includeSystemPromptsEl.checked,
+                        includeFullTextOps: includeFullTextOpsEl.checked
                     });
                 }
 
@@ -375,7 +413,9 @@ export function getMainWebview(safeSystemPrompt: string, safeProjectPrompt: stri
                         customIgnore: customIgnoreEl.value,
                         includeDb: includeDbEl.checked,
                         includeGitHistory: includeGitHistoryEl.checked && gitHistoryLoaded,
-                        gitCommitCount: gitCommitCountEl.value
+                        gitCommitCount: gitCommitCountEl.value,
+                        includeSystemPrompts: includeSystemPromptsEl.checked,
+                        includeFullTextOps: includeFullTextOpsEl.checked
                     });
                 });
 
@@ -400,32 +440,30 @@ export function getMainWebview(safeSystemPrompt: string, safeProjectPrompt: stri
                 });
 
                 document.getElementById('clearBtn').addEventListener('click', () => {
-                    // Clear user text
                     document.getElementById('userText').value = '';
                     vscode.postMessage({ type: 'saveUserText', text: '' });
 
-                    // Clear tree settings
+                    includeSystemPromptsEl.checked = true;
+                    includeFullTextOpsEl.checked = true;
+
                     includeTreeEl.checked = false;
                     updateTreeSettingsVisibility();
                     useGitignoreEl.checked = false;
                     customIgnoreEl.value = '';
                     saveTreeSettingsDebounced();
 
-                    // Clear DB settings
                     includeDbEl.checked = false;
                     dbSettingsEl.classList.add('hidden');
                     selectedDbAliases.clear();
                     dbStructureStatusEl.textContent = '';
                     dbConnListEl.innerHTML = '';
 
-                    // Clear Git history settings
                     includeGitHistoryEl.checked = false;
                     gitHistorySettingsEl.classList.add('hidden');
                     gitHistoryStatusEl.textContent = '';
                     gitHistoryLoaded = false;
                     gitCommitCountEl.value = '5';
 
-                    // Clear files
                     vscode.postMessage({ type: 'clearForm' });
                     files = [];
                     expandedFiles.clear();
