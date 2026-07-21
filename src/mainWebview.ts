@@ -49,8 +49,8 @@ export function getMainWebview(safeSystemPrompt: string, safeProjectPrompt: stri
                 .sym-kind-module, .sym-kind-namespace, .sym-kind-package { background: rgba(197, 134, 192, 0.15); color: #c586c0; border: 1px solid rgba(197, 134, 192, 0.6); }
                 .sym-kind-constant { background: rgba(79, 193, 255, 0.15); color: #4fc1ff; border: 1px solid rgba(79, 193, 255, 0.6); }
                 .sym-kind-file { background: rgba(200, 200, 200, 0.15); color: #c8c8c8; border: 1px solid rgba(200, 200, 200, 0.6); }
-                .action-btn { background: transparent; width: auto; padding: 2px 6px; margin: 0; color: var(--vscode-foreground); border: none; cursor: pointer; display: flex; align-items: center; justify-content: center; }
-                .action-btn:hover { background: var(--vscode-list-activeSelectionBackground); border-radius: 4px; }
+                .action-btn { background: transparent; width: auto; padding: 2px 6px; margin: 0; color: var(--vscode-foreground); border: none; cursor: pointer; }
+                .action-btn:hover { background: var(--vscode-list-activeSelectionBackground); }
                 .remove-btn { color: var(--vscode-errorForeground); }
                 #fileList { margin-bottom: 15px; max-height: 200px; overflow-y: auto; }
                 details { margin-bottom: 10px; }
@@ -73,7 +73,7 @@ export function getMainWebview(safeSystemPrompt: string, safeProjectPrompt: stri
                     border-radius: 4px;
                 }
                 .tree-settings.hidden { display: none; }
-                .hint { font-size: 0.8em; color: var(--vscode-descriptionForeground); margin: 5px 0 8px 0; display: flex; align-items: center; }
+                .hint { font-size: 0.8em; color: var(--vscode-descriptionForeground); margin: 5px 0 8px 0; }
                 .disabled { opacity: 0.5; pointer-events: none; }
                 
                 .mode-switcher {
@@ -113,19 +113,19 @@ export function getMainWebview(safeSystemPrompt: string, safeProjectPrompt: stri
                 <div style="margin-top: 10px;">
                     <label style="display: block; margin-bottom: 5px; font-weight: bold;">Global prompt (Edit):</label>
                     <textarea id="systemPrompt" class="small" placeholder="Global prompt..."></textarea>
-                    <button id="saveSystemPromptBtn" class="secondary"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle; margin-right: 4px;"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg> Save global prompt</button>
+                    <button id="saveSystemPromptBtn" class="secondary">💾 Save global prompt</button>
                     
                     <label style="display: block; margin-bottom: 5px; font-weight: bold; margin-top: 15px;">Global prompt (Ask):</label>
                     <textarea id="askPrompt" class="small" placeholder="Global prompt for Ask mode..."></textarea>
-                    <button id="saveAskPromptBtn" class="secondary"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle; margin-right: 4px;"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg> Save ask prompt</button>
+                    <button id="saveAskPromptBtn" class="secondary">💾 Save ask prompt</button>
 
                     <label style="display: block; margin-bottom: 5px; font-weight: bold; margin-top: 15px;">Global prompt (Custom):</label>
                     <textarea id="customPrompt" class="small" placeholder="Global prompt for Custom mode..."></textarea>
-                    <button id="saveCustomPromptBtn" class="secondary"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle; margin-right: 4px;"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg> Save custom prompt</button>
+                    <button id="saveCustomPromptBtn" class="secondary">💾 Save custom prompt</button>
 
                     <label style="display: block; margin-bottom: 5px; font-weight: bold; margin-top: 15px;">Project prompt:</label>
                     <textarea id="projectPrompt" class="small" placeholder="Local prompt for this particular project..."></textarea>
-                    <button id="saveProjectPromptBtn" class="secondary"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle; margin-right: 4px;"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg> Save project prompt</button>
+                    <button id="saveProjectPromptBtn" class="secondary">💾 Save project prompt</button>
                 </div>
             </details>
 
@@ -138,7 +138,7 @@ export function getMainWebview(safeSystemPrompt: string, safeProjectPrompt: stri
                 <label for="includeFullTextOps">Include FullTextOps Instructions</label>
             </div>
 
-            <button id="clearBtn" class="secondary" style="margin-top: 10px;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle; margin-right: 4px;"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg> Clear form</button>
+            <button id="clearBtn" class="secondary" style="margin-top: 10px;">🗑️ Clear form</button>
 
             <div class="mode-switcher">
                 <button class="mode-btn" data-mode="edit">Edit</button>
@@ -200,12 +200,6 @@ export function getMainWebview(safeSystemPrompt: string, safeProjectPrompt: stri
                 const expandedFiles = new Set();
                 let selectedDbAliases = new Set();
                 let gitHistoryLoaded = false;
-
-                const svgSuccess = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#4ec9b0" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle; margin-right: 4px;"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>';
-                const svgError = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--vscode-errorForeground)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle; margin-right: 4px;"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>';
-                const svgFile = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle; margin-right: 4px;"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>';
-                const svgCheck = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle;"><polyline points="20 6 9 17 4 12"/></svg>';
-                const svgClose = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle;"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>';
 
                 document.getElementById('systemPrompt').value = ${safeSystemPrompt};
                 document.getElementById('projectPrompt').value = ${safeProjectPrompt};
@@ -469,18 +463,18 @@ export function getMainWebview(safeSystemPrompt: string, safeProjectPrompt: stri
                     } else if (message.type === 'dbStatus') {
                         dbStructureStatusEl.textContent = message.text;
                     } else if (message.type === 'dbStructureReady') {
-                        dbStructureStatusEl.innerHTML = svgSuccess + ' DB structure fetched!';
+                        dbStructureStatusEl.textContent = '✅ DB structure fetched!';
                         getDbStructureBtn.disabled = false;
                         requestCharCount();
                     } else if (message.type === 'gitStatus') {
                         gitHistoryStatusEl.textContent = message.text;
                     } else if (message.type === 'gitHistoryReady') {
-                        gitHistoryStatusEl.innerHTML = svgSuccess + ' Git history fetched! (' + message.commitCount + ' commits)';
+                        gitHistoryStatusEl.textContent = '✅ Git history fetched! (' + message.commitCount + ' commits)';
                         getGitHistoryBtn.disabled = false;
                         gitHistoryLoaded = true;
                         requestCharCount();
                     } else if (message.type === 'gitError') {
-                        gitHistoryStatusEl.innerHTML = svgError + ' Error: ' + message.error;
+                        gitHistoryStatusEl.textContent = '❌ Error: ' + message.error;
                         getGitHistoryBtn.disabled = false;
                         gitHistoryLoaded = false;
                     }
@@ -596,7 +590,7 @@ export function getMainWebview(safeSystemPrompt: string, safeProjectPrompt: stri
                         header.className = 'file-header';
                         
                         const nameSpan = document.createElement('span');
-                        nameSpan.innerHTML = svgFile + escapeHtml(file.name);
+                        nameSpan.innerHTML = '📄 ' + escapeHtml(file.name);
                         header.appendChild(nameSpan);
                         
                         const actionsDiv = document.createElement('div');
@@ -606,7 +600,7 @@ export function getMainWebview(safeSystemPrompt: string, safeProjectPrompt: stri
                         
                         const toggleBtn = document.createElement('button');
                         toggleBtn.className = 'action-btn';
-                        toggleBtn.innerHTML = svgCheck;
+                        toggleBtn.innerHTML = '✔';
                         toggleBtn.title = 'Toggle all symbols';
                         toggleBtn.onclick = (e) => {
                             e.stopPropagation();
@@ -615,7 +609,7 @@ export function getMainWebview(safeSystemPrompt: string, safeProjectPrompt: stri
                         
                         const removeBtn = document.createElement('button');
                         removeBtn.className = 'action-btn remove-btn';
-                        removeBtn.innerHTML = svgClose;
+                        removeBtn.innerText = '✕';
                         removeBtn.onclick = (e) => {
                             e.stopPropagation();
                             expandedFiles.delete(file.uri);
