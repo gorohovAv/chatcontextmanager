@@ -17,20 +17,14 @@
     "Chat",
     "Other"
   ],
-  "keywords": [
+    "keywords": [
     "prompt",
     "ai",
     "chat",
     "llm",
     "context"
   ],
-  "activationEvents": [
-    "onView:promptBuilderView",
-    "onView:settingsView",
-    "onView:logInterceptorView",
-    "onView:figmaView",
-    "onView:fullTextOpsView"
-  ],
+  "activationEvents": [],
   "main": "./dist/extension.js",
   "enabledApiProposals": [
     "terminalDataWriteEvent"
@@ -66,11 +60,6 @@
           "type": "webview",
           "id": "figmaView",
           "name": "Figma Layout"
-        },
-        {
-          "type": "webview",
-          "id": "fullTextOpsView",
-          "name": "Full text ops"
         }
       ]
     }
