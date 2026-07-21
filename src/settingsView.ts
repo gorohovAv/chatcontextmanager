@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import { fetchDbSchema } from './dbTools';
 
 export class SettingsViewProvider implements vscode.WebviewViewProvider {
     public static readonly viewType = 'settingsView';
@@ -29,6 +30,9 @@ export class SettingsViewProvider implements vscode.WebviewViewProvider {
                     break;
                 case 'requestList':
                     await this._updateList();
+                    break;
+                case 'checkConnection':
+                    await this._checkConnection(data.alias);
                     break;
             }
         });
@@ -90,6 +94,40 @@ export class SettingsViewProvider implements vscode.WebviewViewProvider {
         }
     }
 
+    private async _checkConnection(alias: string) {
+        const connStr = await this.context.secrets.get(`dbConn_${alias}`);
+        if (!connStr) {
+            this._view?.webview.postMessage({ 
+                type: 'checkResult', 
+                alias, 
+                success: false, 
+                text: 'Connection string not found.' 
+            });
+            return;
+        }
+
+        try {
+            const schema = await fetchDbSchema(connStr);
+            
+            this._view?.webview.postMessage({ 
+                type: 'checkResult', 
+                alias, 
+                success: true, 
+                text: schema || 'Connection successful, but no tables found in the schema.' 
+            });
+        } catch (error: any) {
+            let errMsg = error.message || 'Unknown error';
+            errMsg = errMsg.replace(/[^\x00-\x7F]/g, ' ').replace(/\s+/g, ' ').trim();
+            
+            this._view?.webview.postMessage({ 
+                type: 'checkResult', 
+                alias, 
+                success: false, 
+                text: `Check failed: ${errMsg}` 
+            });
+        }
+    }
+
     private async _updateList() {
         if (this._view) {
             const aliases = await this._getAliases();
@@ -136,6 +174,25 @@ export class SettingsViewProvider implements vscode.WebviewViewProvider {
                     white-space: pre-wrap;
                 }
                 h3 { margin-top: 15px; margin-bottom: 10px; }
+                
+                #checkResult {
+                    margin-top: 10px;
+                    padding: 10px;
+                    border-radius: 4px;
+                    font-family: monospace;
+                    font-size: 0.85em;
+                    white-space: pre-wrap;
+                    display: none;
+                    background: var(--vscode-editor-background);
+                    border: 1px solid var(--vscode-input-border);
+                    color: var(--vscode-foreground);
+                }
+                .check-success {
+                    border-left: 3px solid var(--vscode-terminal-ansiGreen, #2ea043) !important;
+                }
+                .check-error {
+                    border-left: 3px solid var(--vscode-terminal-ansiRed, #f85149) !important;
+                }
             </style>
         </head>
         <body>
@@ -145,6 +202,8 @@ export class SettingsViewProvider implements vscode.WebviewViewProvider {
                 Add Connection
             </button>
             <div id="connList" style="margin-top: 10px;"></div>
+            
+            <div id="checkResult"></div>
 
             <h3>Connection String Examples</h3>
             <div class="examples">
@@ -164,6 +223,7 @@ sqlite:///home/user/project/database.sqlite
             <script>
                 const vscode = acquireVsCodeApi();
                 const connList = document.getElementById('connList');
+                const checkResult = document.getElementById('checkResult');
 
                 document.getElementById('addBtn').addEventListener('click', () => {
                     vscode.postMessage({ type: 'addConnection' });
@@ -189,16 +249,33 @@ sqlite:///home/user/project/database.sqlite
                         const actionsDiv = document.createElement('div');
                         actionsDiv.className = 'conn-actions';
                         
+                        const checkBtn = document.createElement('button');
+                        checkBtn.className = 'secondary';
+                        checkBtn.textContent = 'Check';
+                        checkBtn.onclick = () => {
+                            checkResult.style.display = 'block';
+                            checkResult.className = '';
+                            checkResult.textContent = \`[\${alias}] Checking connection and fetching schema...\`;
+                            vscode.postMessage({ type: 'checkConnection', alias });
+                        };
+
                         const editBtn = document.createElement('button');
                         editBtn.className = 'secondary';
                         editBtn.textContent = 'Edit';
-                        editBtn.onclick = () => vscode.postMessage({ type: 'editConnection', alias });
+                        editBtn.onclick = () => {
+                            checkResult.style.display = 'none';
+                            vscode.postMessage({ type: 'editConnection', alias });
+                        };
                         
                         const delBtn = document.createElement('button');
                         delBtn.className = 'danger';
                         delBtn.textContent = 'Delete';
-                        delBtn.onclick = () => vscode.postMessage({ type: 'deleteConnection', alias });
+                        delBtn.onclick = () => {
+                            checkResult.style.display = 'none';
+                            vscode.postMessage({ type: 'deleteConnection', alias });
+                        };
                         
+                        actionsDiv.appendChild(checkBtn);
                         actionsDiv.appendChild(editBtn);
                         actionsDiv.appendChild(delBtn);
                         
@@ -208,10 +285,18 @@ sqlite:///home/user/project/database.sqlite
                     });
                 }
 
+                function showCheckResult(alias, success, text) {
+                    checkResult.style.display = 'block';
+                    checkResult.className = success ? 'check-success' : 'check-error';
+                    checkResult.textContent = \`[\${alias}]\\n\${text}\`;
+                }
+
                 window.addEventListener('message', event => {
                     const message = event.data;
                     if (message.type === 'updateList') {
                         renderList(message.aliases || []);
+                    } else if (message.type === 'checkResult') {
+                        showCheckResult(message.alias, message.success, message.text);
                     }
                 });
 
