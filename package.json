@@ -17,7 +17,7 @@
     "Chat",
     "Other"
   ],
-    "keywords": [
+  "keywords": [
     "prompt",
     "ai",
     "chat",
@@ -60,6 +60,11 @@
           "type": "webview",
           "id": "figmaView",
           "name": "Figma Layout"
+        },
+        {
+          "type": "webview",
+          "id": "acceptView",
+          "name": "Accept View"
         }
       ]
     }

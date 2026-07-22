@@ -5,6 +5,7 @@ import { PayloadManager, FileInfo } from './payload';
 import { LogInterceptorViewProvider } from './logInterceptor';
 import { SettingsViewProvider } from './settingsView';
 import { FigmaViewProvider } from './figmaView';
+import { AcceptViewProvider } from './acceptView';
 import { getGitHistory } from './history';
 import { getMainWebview } from './mainWebview';
 import { fetchDbSchema } from './dbTools';
@@ -43,6 +44,14 @@ export function activate(context: vscode.ExtensionContext) {
         { webviewOptions: { retainContextWhenHidden: true } }
     );
     context.subscriptions.push(figmaDisposable);
+
+    const acceptProvider = new AcceptViewProvider(context);
+    const acceptDisposable = vscode.window.registerWebviewViewProvider(
+        AcceptViewProvider.viewType,
+        acceptProvider,
+        { webviewOptions: { retainContextWhenHidden: true } }
+    );
+    context.subscriptions.push(acceptDisposable);
 }
 
 class PromptBuilderViewProvider implements vscode.WebviewViewProvider {
