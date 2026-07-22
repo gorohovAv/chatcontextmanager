@@ -15,7 +15,9 @@ export class AcceptViewProvider implements vscode.WebviewViewProvider {
         this._view = webviewView;
         webviewView.webview.options = { enableScripts: true };
 
-        webviewView.webview.html = this._getHtmlForWebview(webviewView.webview);
+        const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || '(no workspace open)';
+
+        webviewView.webview.html = this._getHtmlForWebview(webviewView.webview, workspaceRoot);
 
         webviewView.webview.onDidReceiveMessage(async (data) => {
             if (data.type === 'acceptXml') {
@@ -34,8 +36,6 @@ export class AcceptViewProvider implements vscode.WebviewViewProvider {
             let updatedCount = 0;
             for (const fileMatch of fileMatches) {
                 const pathMatch = fileMatch.match(/<path>([\s\S]*?)<\/path>/);
-                // Жадное сопоставление ([\s\S]*) гарантирует, что мы захватим текст до ПОСЛЕДНЕГО </text>,
-                // что корректно обрабатывает неэкранированные "</text>" внутри самого кода.
                 const textMatch = fileMatch.match(/<text>([\s\S]*)<\/text>/);
                 
                 if (pathMatch && textMatch) {
@@ -68,7 +68,28 @@ export class AcceptViewProvider implements vscode.WebviewViewProvider {
         }
     }
 
-    private _getHtmlForWebview(webview: vscode.Webview) {
+    private _getHtmlForWebview(webview: vscode.Webview, workspaceRoot: string) {
+        const systemPromptExample = `You are a coding assistant. When asked to modify or create files, you MUST output ONLY a valid XML block with the following structure. Do not wrap the XML in markdown code blocks.
+
+Structure:
+<root>
+  <file>
+    <path>relative/path/to/file.ext</path>
+    <text>
+      Full file content goes here.
+    </text>
+  </file>
+</root>
+
+Rules:
+1. <path> must be relative to the project root (e.g., "src/main.ts") or an absolute path.
+2. <text> must contain the COMPLETE, updated content of the file, not just a diff or snippet.
+3. If the file is new, provide the full content.
+4. Ensure the XML is well-formed.`;
+
+        const safeWorkspaceRoot = workspaceRoot.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        const safePrompt = systemPromptExample.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
         return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -77,7 +98,9 @@ export class AcceptViewProvider implements vscode.WebviewViewProvider {
     <title>Accept View</title>
     <style>
         body { font-family: var(--vscode-font-family); padding: 10px; color: var(--vscode-foreground); }
-        textarea { width: 100%; height: 200px; background: var(--vscode-input-background); color: var(--vscode-input-foreground); border: 1px solid var(--vscode-input-border); padding: 5px; box-sizing: border-box; resize: vertical; }
+        .base-path { font-size: 0.85em; color: var(--vscode-descriptionForeground); margin-bottom: 10px; padding: 6px 8px; background: var(--vscode-textBlockQuote-background); border-left: 3px solid var(--vscode-textBlockQuote-border); word-break: break-all; }
+        .base-path strong { color: var(--vscode-foreground); }
+        textarea { width: 100%; height: 200px; background: var(--vscode-input-background); color: var(--vscode-input-foreground); border: 1px solid var(--vscode-input-border); padding: 5px; box-sizing: border-box; resize: vertical; font-family: var(--vscode-editor-font-family); font-size: var(--vscode-editor-font-size); }
         textarea:disabled { opacity: 0.5; cursor: not-allowed; }
         .file-input-wrapper { margin: 10px 0; }
         input[type="file"] { color: var(--vscode-foreground); }
@@ -86,17 +109,33 @@ export class AcceptViewProvider implements vscode.WebviewViewProvider {
         button:hover { background: var(--vscode-button-hoverBackground); }
         button:disabled { opacity: 0.5; cursor: not-allowed; }
         .status { margin-top: 10px; color: var(--vscode-descriptionForeground); font-size: 0.9em; word-wrap: break-word; }
+        hr { border: none; border-top: 1px solid var(--vscode-panel-border); margin: 20px 0; }
+        pre { background: var(--vscode-textCodeBlock-background); padding: 10px; border-radius: 4px; overflow-x: auto; font-size: 0.82em; white-space: pre-wrap; word-wrap: break-word; }
+        code { font-family: var(--vscode-editor-font-family); color: var(--vscode-foreground); }
     </style>
 </head>
 <body>
     <h3>Accept XML</h3>
+    
+    <div class="base-path">
+        <strong>Base path:</strong> ${safeWorkspaceRoot}
+    </div>
+
     <textarea id="xmlText" placeholder="Paste XML here..."></textarea>
+    
     <div class="file-input-wrapper">
         <label for="xmlFile">Or select an XML file: </label>
         <input type="file" id="xmlFile" accept=".xml,.txt">
     </div>
-    <button id="acceptBtn">Accept</button>
+    
+    <button id="acceptBtn">Accept & Apply Files</button>
     <div id="status" class="status"></div>
+
+    <hr>
+    
+    <h4>AI System Prompt Example</h4>
+    <p style="font-size: 0.85em; color: var(--vscode-descriptionForeground);">Use this prompt to instruct the AI to generate the correct XML format:</p>
+    <pre><code>${safePrompt}</code></pre>
 
     <script>
         const vscode = acquireVsCodeApi();
@@ -151,13 +190,16 @@ export class AcceptViewProvider implements vscode.WebviewViewProvider {
 
             status.textContent = 'Processing...';
             acceptBtn.disabled = true;
-            vscode.postMessage({ type: 'acceptXml', content: contentToSend });
+            vscode.postMessage({ 
+                type: 'acceptXml', 
+                content: contentToSend
+            });
         });
 
         window.addEventListener('message', event => {
             const message = event.data;
-            acceptBtn.disabled = false;
             if (message.type === 'acceptSuccess') {
+                acceptBtn.disabled = false;
                 status.textContent = 'Files updated successfully! (' + (message.count || 0) + ' files)';
                 xmlText.value = '';
                 xmlText.disabled = false;
@@ -165,6 +207,7 @@ export class AcceptViewProvider implements vscode.WebviewViewProvider {
                 xmlFile.value = '';
                 fileContent = '';
             } else if (message.type === 'acceptError') {
+                acceptBtn.disabled = false;
                 status.textContent = 'Error: ' + message.error;
             }
         });
