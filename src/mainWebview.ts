@@ -162,7 +162,21 @@ export function getMainWebview(safeSystemPrompt: string, safeProjectPrompt: stri
 
             <textarea id="userText" placeholder="Enter your actual promt here..."></textarea>
             
-            <button id="addFileBtn" class="secondary">Inject files</button>
+            <div style="display: flex; gap: 10px; margin-bottom: 10px;">
+                <button id="addFileBtn" class="secondary" style="flex: 1;">
+                    <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M8.5 2.5a.5.5 0 0 0-1 0v2h-2a.5.5 0 0 0 0 1h2v2a.5.5 0 0 0 1 0v-2h2a.5.5 0 0 0 0-1h-2v-2z"/>
+                        <path d="M2 2a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V2zm10-1H4a1 1 0 0 0-1 1v12a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1V2a1 1 0 0 0-1-1z"/>
+                    </svg>
+                    Inject files
+                </button>
+                <button id="addFolderBtn" class="secondary" style="flex: 1;">
+                    <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M.54 3.87.5 3a2 2 0 0 1 2-2h3.672a2 2 0 0 1 1.414.586l.828.828A2 2 0 0 0 9.828 3h3.982a2 2 0 0 1 1.992 2.181l-.637 7A2 2 0 0 1 13.174 14H2.826a2 2 0 0 1-1.991-1.819l-.637-7a1.99 1.99 0 0 1 .342-1.31zM2.19 4a1 1 0 0 0-.996 1.09l.637 7a1 1 0 0 0 .995.91h10.348a1 1 0 0 0 .995-.91l.637-7A1 1 0 0 0 13.81 4H2.19zm4.69-1.707A1 1 0 0 0 6.172 2H2.5a1 1 0 0 0-1 .981l.006.139C1.72 3.042 1.95 3 2.19 3h5.396l-.707-.707z"/>
+                    </svg>
+                    Inject folder
+                </button>
+            </div>
             <div id="fileList"></div>
             
             <div class="checkbox-container">
@@ -395,6 +409,7 @@ export function getMainWebview(safeSystemPrompt: string, safeProjectPrompt: stri
                 });
 
                 document.getElementById('addFileBtn').addEventListener('click', () => vscode.postMessage({ type: 'addFile' }));
+                document.getElementById('addFolderBtn').addEventListener('click', () => vscode.postMessage({ type: 'addFolder' }));
 
                 document.getElementById('copyBtn').addEventListener('click', () => {
                     vscode.postMessage({ 

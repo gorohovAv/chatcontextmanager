@@ -104,13 +104,32 @@ class PromptBuilderViewProvider implements vscode.WebviewViewProvider {
         webviewView.webview.onDidReceiveMessage(async (data) => {
             switch (data.type) {
                 case 'addFile':
-                    const uris = await vscode.window.showOpenDialog({
-                        canSelectMany: true, openLabel: 'Добавить файлы',
+                    const fileUris = await vscode.window.showOpenDialog({
+                        canSelectMany: true, openLabel: 'Add files',
                         canSelectFiles: true, canSelectFolders: false
                     });
-                    if (uris) {
-                        await this.payloadManager.addFiles(uris);
+                    if (fileUris) {
+                        await this.payloadManager.addFiles(fileUris);
                         this._updateFileList();
+                    }
+                    break;
+                case 'addFolder':
+                    const folderUris = await vscode.window.showOpenDialog({
+                        canSelectMany: true, openLabel: 'Add folder',
+                        canSelectFiles: false, canSelectFolders: true
+                    });
+                    if (folderUris) {
+                        const allFiles: vscode.Uri[] = [];
+                        for (const folderUri of folderUris) {
+                            const files = await this._getFilesInFolder(folderUri);
+                            allFiles.push(...files);
+                        }
+                        if (allFiles.length > 0) {
+                            await this.payloadManager.addFiles(allFiles);
+                            this._updateFileList();
+                        } else {
+                            vscode.window.showInformationMessage('No files found in the selected folder(s).');
+                        }
                     }
                     break;
                 case 'removeFile':
@@ -319,6 +338,25 @@ class PromptBuilderViewProvider implements vscode.WebviewViewProvider {
         });
 
         this._updateFileList();
+    }
+
+    private async _getFilesInFolder(folderUri: vscode.Uri): Promise<vscode.Uri[]> {
+        const files: vscode.Uri[] = [];
+        try {
+            const entries = await vscode.workspace.fs.readDirectory(folderUri);
+            for (const [name, type] of entries) {
+                const entryUri = vscode.Uri.joinPath(folderUri, name);
+                if (type === vscode.FileType.File) {
+                    files.push(entryUri);
+                } else if (type === vscode.FileType.Directory) {
+                    const subFiles = await this._getFilesInFolder(entryUri);
+                    files.push(...subFiles);
+                }
+            }
+        } catch (e) {
+            console.warn(`[PromptBuilder] Could not read directory ${folderUri.fsPath}:`, e);
+        }
+        return files;
     }
 
     private async _enrichFilesWithCharCounts(files: FileInfo[]): Promise<any[]> {
