@@ -13,6 +13,7 @@ https://marketplace.visualstudio.com/items?itemName=Eggplant11.chatcontextmanage
 - git history injecting
 - log intercepting; write every log to a file to stop fighting with terminal buffer
 - figma fetching; fetch layout -> convert to a minimal md -> inject to a context as a file
+- xml diff accepting; edit your system prompt -> get xml -> accept all changes to your codebase in one move
 
 ## Screenshots
 
