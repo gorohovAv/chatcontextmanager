@@ -74,7 +74,7 @@ export class AcceptViewProvider implements vscode.WebviewViewProvider {
     }
 
     private _getHtmlForWebview(webview: vscode.Webview, workspaceRoot: string) {
-        const systemPromptExample = `You are a coding assistant. When asked to modify or create files, you MUST output ONLY a valid XML block with the following structure. Do not wrap the XML in markdown code blocks.
+        const systemPromptExample = `Return exactly one xml with new content of files.
 
 Structure:
 <root>
@@ -86,12 +86,7 @@ Structure:
   </file>
 </root>
 
-Rules:
-1. <path> MUST be relative to the project root. Examples: "src/main.ts", "/src/main.ts", "./src/main.ts" — all are interpreted as relative to workspace root.
-2. Do NOT use absolute filesystem paths (like "C:\\..." or "/home/...") unless explicitly asked.
-3. <text> must contain the COMPLETE, updated content of the file, not just a diff or snippet.
-4. If the file is new, provide the full content.
-5. Ensure the XML is well-formed.`;
+If context is insufficient then request missing parts from user instead of xml`;
 
         const safeWorkspaceRoot = workspaceRoot.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
         const safePrompt = systemPromptExample.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
