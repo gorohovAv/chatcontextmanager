@@ -9,6 +9,7 @@ import { AcceptViewProvider } from './acceptView';
 import { getGitHistory } from './history';
 import { getMainWebview } from './mainWebview';
 import { fetchDbSchema } from './dbTools';
+import { registerReactBridge } from './extensionReactBridge'; // <-- ДОБАВЛЕНО
 
 export function activate(context: vscode.ExtensionContext) {
     console.log('🚀 [МОЕ РАСШИРЕНИЕ] Функция activate() вызвана!');
@@ -52,6 +53,9 @@ export function activate(context: vscode.ExtensionContext) {
         { webviewOptions: { retainContextWhenHidden: true } }
     );
     context.subscriptions.push(acceptDisposable);
+
+    // <-- ДОБАВЛЕНО: Регистрация нового React-вебвью
+    registerReactBridge(context);
 }
 
 class PromptBuilderViewProvider implements vscode.WebviewViewProvider {
