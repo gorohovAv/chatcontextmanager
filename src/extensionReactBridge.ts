@@ -12,7 +12,7 @@ export function registerReactBridge(context: vscode.ExtensionContext) {
 class ReactViewProvider implements vscode.WebviewViewProvider {
     constructor(private readonly extensionUri: vscode.Uri) {}
 
-    resolveWebviewView(webviewView: vscode.WebviewView) {
+        resolveWebviewView(webviewView: vscode.WebviewView) {
         webviewView.webview.options = {
             enableScripts: true,
             localResourceRoots: [vscode.Uri.joinPath(this.extensionUri, 'dist', 'webview')]
@@ -29,7 +29,6 @@ class ReactViewProvider implements vscode.WebviewViewProvider {
             return;
         }
 
-        // Имена файлов строго как в логе сборки Vite
         const scriptUri = webviewView.webview.asWebviewUri(
             vscode.Uri.joinPath(distRoot, 'assets', 'index.js')
         );
@@ -38,17 +37,21 @@ class ReactViewProvider implements vscode.WebviewViewProvider {
         );
         const nonce = getNonce();
 
-        // 1. Внедряем CSP и стили перед закрывающим </head>
+        // 1. Внедряем CSP (без дублирования стилей)
         html = html.replace(
             '</head>',
-            `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webviewView.webview.cspSource} 'unsafe-inline'; script-src 'nonce-${nonce}' ${webviewView.webview.cspSource}; img-src ${webviewView.webview.cspSource} data:;">
-             <link href="${styleUri}" rel="stylesheet"></head>`
+            `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webviewView.webview.cspSource} 'unsafe-inline'; script-src 'nonce-${nonce}' ${webviewView.webview.cspSource}; img-src ${webviewView.webview.cspSource} data:;"></head>`
         );
 
-        // 2. Заменяем скрипт, сгенерированный Vite, на наш с nonce
-        // Vite генерирует: <script type="module" crossorigin src="/assets/index.js"></script>
+        // 2. Заменяем CSS, сгенерированный Vite (учитываем ./ или отсутствие префикса)
         html = html.replace(
-            /<script\s+type="module"(?:\s+crossorigin)?\s+src="\/assets\/index\.js"><\/script>/,
+            /<link[^>]*href="[^"]*assets\/index\.css"[^>]*>/,
+            `<link href="${styleUri}" rel="stylesheet">`
+        );
+
+        // 3. Заменяем JS, сгенерированный Vite (учитываем ./ или отсутствие префикса)
+        html = html.replace(
+            /<script\s+type="module"(?:\s+crossorigin)?\s+src="[^"]*assets\/index\.js"[^>]*><\/script>/,
             `<script type="module" nonce="${nonce}" src="${scriptUri}"></script>`
         );
 
