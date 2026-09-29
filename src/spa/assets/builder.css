@@ -1,0 +1,297 @@
+/* ===== Builder Page Styles ===== */
+
+.builder-page {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.clear-btn {
+  align-self: flex-start;
+  margin-bottom: 4px;
+}
+
+.inject-buttons-row {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.inject-btn {
+  flex: 1;
+  padding: 9px 16px;
+  font-size: 13px;
+}
+
+.copy-btn {
+  margin-top: 8px;
+  padding: 12px 20px;
+  font-size: 14px;
+}
+
+/* ===== File List ===== */
+.file-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 280px;
+  overflow-y: auto;
+  margin-bottom: 12px;
+  padding-right: 4px;
+}
+
+.file-list-empty {
+  padding: 16px;
+  text-align: center;
+  color: var(--vscode-descriptionForeground);
+  font-size: 12px;
+  border: 1px dashed var(--vscode-input-border);
+  border-radius: var(--radius-md);
+  margin-bottom: 12px;
+}
+
+.file-item {
+  background: var(--vscode-list-hoverBackground);
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  transition: all var(--transition-fast);
+  overflow: hidden;
+}
+
+.file-item:hover {
+  border-color: var(--vscode-input-border);
+}
+
+.file-item.expanded {
+  background: var(--vscode-editor-background);
+  border-color: var(--vscode-input-border);
+}
+
+.file-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 12px;
+  cursor: pointer;
+  user-select: none;
+  transition: background var(--transition-fast);
+}
+
+.file-header:hover {
+  background: var(--vscode-list-activeSelectionBackground);
+}
+
+.file-name {
+  font-size: 13px;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+  min-width: 0;
+}
+
+.file-actions {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.action-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--vscode-foreground);
+  font-size: 12px;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.action-btn:hover {
+  background: var(--vscode-button-background);
+  color: var(--vscode-button-foreground);
+}
+
+.remove-btn {
+  color: var(--vscode-errorForeground);
+}
+
+.remove-btn:hover {
+  background: var(--vscode-errorForeground);
+  color: var(--vscode-editor-background);
+}
+
+.symbols-container {
+  padding: 8px 12px 12px;
+  border-top: 1px solid var(--vscode-panel-border);
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+/* ===== Symbol Items ===== */
+.symbol-item {
+  display: flex;
+  align-items: center;
+  padding: 4px 0;
+  font-size: 12px;
+  gap: 8px;
+}
+
+.symbol-item input[type="checkbox"] {
+  width: 14px;
+  height: 14px;
+  accent-color: var(--vscode-button-background);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.symbol-item label {
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+  flex: 1;
+  min-width: 0;
+  gap: 6px;
+}
+
+.sym-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--vscode-editor-font-family, monospace);
+  font-size: 12px;
+}
+
+.sym-detail {
+  color: var(--vscode-descriptionForeground);
+  font-style: italic;
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sym-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: var(--radius-sm);
+  font-size: 10px;
+  font-weight: bold;
+  font-family: var(--vscode-editor-font-family, monospace);
+  flex-shrink: 0;
+  line-height: 1;
+}
+
+/* Symbol kind colors */
+.sym-kind-class,
+.sym-kind-interface,
+.sym-kind-struct,
+.sym-kind-constructor,
+.sym-kind-type-parameter {
+  background: rgba(78, 201, 176, 0.15);
+  color: #4ec9b0;
+  border: 1px solid rgba(78, 201, 176, 0.6);
+}
+
+.sym-kind-method,
+.sym-kind-function {
+  background: rgba(220, 220, 170, 0.15);
+  color: #dcdcaa;
+  border: 1px solid rgba(220, 220, 170, 0.6);
+}
+
+.sym-kind-property,
+.sym-kind-field {
+  background: rgba(156, 220, 254, 0.15);
+  color: #9cdcfe;
+  border: 1px solid rgba(156, 220, 254, 0.6);
+}
+
+.sym-kind-enum,
+.sym-kind-enum-member,
+.sym-kind-event {
+  background: rgba(206, 145, 120, 0.15);
+  color: #ce9178;
+  border: 1px solid rgba(206, 145, 120, 0.6);
+}
+
+.sym-kind-module,
+.sym-kind-namespace,
+.sym-kind-package {
+  background: rgba(197, 134, 192, 0.15);
+  color: #c586c0;
+  border: 1px solid rgba(197, 134, 192, 0.6);
+}
+
+.sym-kind-constant {
+  background: rgba(79, 193, 255, 0.15);
+  color: #4fc1ff;
+  border: 1px solid rgba(79, 193, 255, 0.6);
+}
+
+.sym-kind-file {
+  background: rgba(200, 200, 200, 0.15);
+  color: #c8c8c8;
+  border: 1px solid rgba(200, 200, 200, 0.6);
+}
+
+.sym-kind-operator,
+.sym-kind-unknown {
+  background: rgba(180, 180, 180, 0.15);
+  color: #b4b4b4;
+  border: 1px solid rgba(180, 180, 180, 0.5);
+}
+
+/* ===== Tree / DB / Git Settings Panels ===== */
+.tree-settings {
+  padding: 12px;
+  background: var(--vscode-editor-background);
+  border: 1px solid var(--vscode-input-border);
+  border-radius: var(--radius-md);
+  margin-bottom: 12px;
+  animation: slideDown 0.2s ease;
+}
+
+.tree-settings.hidden {
+  display: none;
+}
+
+@keyframes slideDown {
+  from { opacity: 0; transform: translateY(-6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.db-conn-list {
+  max-height: 150px;
+  overflow-y: auto;
+  margin-bottom: 10px;
+  padding-right: 4px;
+}
+
+/* ===== Responsive ===== */
+@media (max-width: 600px) {
+  .inject-buttons-row {
+    flex-direction: column;
+  }
+
+  .tab-bar-title {
+    display: none;
+  }
+
+  .tab-label {
+    display: none;
+  }
+
+  .tab-btn {
+    padding: 6px 10px;
+  }
+}
