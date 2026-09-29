@@ -1,0 +1,1 @@
+to start extension do npm run build:spa in chatcontextmanager folder then go to the run and debug icon in right sidebar of vscode and click green tringle icon
