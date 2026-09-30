@@ -1,86 +1,349 @@
-/* ===== Settings Page Styles ===== */
-
 .settings-page {
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  height: 100%;
+  padding: 20px;
+  color: var(--vscode-foreground);
+  background-color: var(--vscode-editor-background);
+  overflow-y: auto;
 }
 
-.settings-title {
-  font-size: 18px;
-  font-weight: 700;
+.settings-header {
+  margin-bottom: 24px;
+}
+
+.settings-main-title {
+  font-size: 1.5rem;
+  font-weight: 600;
+  margin: 0 0 8px 0;
   color: var(--vscode-foreground);
+}
+
+.settings-main-desc {
+  margin: 0;
+  color: var(--vscode-descriptionForeground);
+  font-size: 0.95rem;
+}
+
+/* Navigation Cards */
+.settings-nav {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 16px;
+  margin-bottom: 32px;
+}
+
+.nav-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  padding: 16px;
+  background: var(--vscode-editor-inactiveSelectionBackground);
+  border: 1px solid transparent;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  text-align: left;
+  color: var(--vscode-foreground);
+}
+
+.nav-card:hover {
+  background: var(--vscode-list-hoverBackground);
+  border-color: var(--vscode-focusBorder);
+}
+
+.nav-card.active {
+  background: var(--vscode-button-background);
+  color: var(--vscode-button-foreground);
+  border-color: var(--vscode-button-background);
+}
+
+.nav-card.active .nav-desc,
+.nav-card.active .nav-card-icon svg {
+  color: var(--vscode-button-foreground);
+  opacity: 0.9;
+}
+
+.nav-card-icon {
+  margin-bottom: 12px;
+  padding: 8px;
+  background: rgba(128, 128, 128, 0.1);
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.nav-card.active .nav-card-icon {
+  background: rgba(255, 255, 255, 0.15);
+}
+
+.nav-title {
+  font-weight: 600;
+  font-size: 1rem;
   margin-bottom: 4px;
 }
 
-.settings-desc {
-  font-size: 13px;
+.nav-desc {
+  font-size: 0.85rem;
   color: var(--vscode-descriptionForeground);
-  line-height: 1.5;
-  margin-bottom: 8px;
+  line-height: 1.4;
+}
+
+/* Module Container */
+.module-container {
+  animation: fadeIn 0.3s ease;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.module-title {
+  font-size: 1.25rem;
+  font-weight: 600;
+  margin: 0 0 8px 0;
+}
+
+.module-desc {
+  color: var(--vscode-descriptionForeground);
+  margin-bottom: 24px;
+  font-size: 0.95rem;
+}
+
+/* Sections */
+.settings-section {
+  background: var(--vscode-editor-inactiveSelectionBackground);
+  border-radius: 8px;
+  padding: 20px;
+  margin-bottom: 20px;
+  border: 1px solid var(--vscode-widget-border);
+}
+
+.section-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 1rem;
+  font-weight: 600;
+  margin: 0 0 8px 0;
+}
+
+.section-hint {
+  font-size: 0.85rem;
+  color: var(--vscode-descriptionForeground);
+  margin: 0 0 12px 0;
+}
+
+.section-hint.warning {
+  color: var(--vscode-warningForeground);
+  margin-top: 12px;
+}
+
+/* Inputs & Buttons */
+.input-group {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.vscode-input {
+  width: 100%;
+  padding: 8px 12px;
+  background: var(--vscode-input-background);
+  color: var(--vscode-input-foreground);
+  border: 1px solid var(--vscode-input-border);
+  border-radius: 4px;
+  font-family: var(--vscode-font-family);
+  font-size: 0.9rem;
+  box-sizing: border-box;
+  transition: border-color 0.2s;
+}
+
+.vscode-input:focus {
+  outline: none;
+  border-color: var(--vscode-focusBorder);
+}
+
+.vscode-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 8px 16px;
+  background: var(--vscode-button-background);
+  color: var(--vscode-button-foreground);
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-family: var(--vscode-font-family);
+  font-size: 0.9rem;
+  font-weight: 500;
+  transition: background 0.2s;
+  align-self: flex-start;
+}
+
+.vscode-button:hover:not(:disabled) {
+  background: var(--vscode-button-hoverBackground);
+}
+
+.vscode-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.vscode-button.secondary {
+  background: var(--vscode-button-secondaryBackground);
+  color: var(--vscode-button-secondaryForeground);
+}
+
+.vscode-button.secondary:hover:not(:disabled) {
+  background: var(--vscode-button-secondaryHoverBackground);
+}
+
+.vscode-button.danger {
+  background: var(--vscode-errorBackground, #d32f2f);
+  color: var(--vscode-errorForeground, #fff);
+}
+
+.vscode-button.danger:hover:not(:disabled) {
+  background: #b71c1c;
+}
+
+.vscode-button.small {
+  padding: 4px 10px;
+  font-size: 0.85rem;
+}
+
+/* Links List */
+.links-list, .connections-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.link-card, .conn-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px;
+  background: var(--vscode-editor-background);
+  border: 1px solid var(--vscode-widget-border);
+  border-radius: 6px;
+  transition: all 0.2s;
+}
+
+.link-card {
+  cursor: pointer;
+}
+
+.link-card:hover, .conn-item:hover {
+  border-color: var(--vscode-focusBorder);
+}
+
+.link-card.selected {
+  border-color: var(--vscode-button-background);
+  background: color-mix(in srgb, var(--vscode-button-background) 15%, transparent);
+}
+
+.link-info {
+  flex: 1;
+  overflow: hidden;
+  margin-right: 12px;
+}
+
+.link-name, .conn-item-name {
+  font-weight: 600;
+  margin-bottom: 4px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.link-url {
+  font-size: 0.85rem;
+  color: var(--vscode-descriptionForeground);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.conn-actions {
+  display: flex;
+  gap: 6px;
+}
+
+/* Check Result */
+.check-result {
+  margin-top: 16px;
+  padding: 12px;
+  border-radius: 6px;
+  font-family: var(--vscode-editor-font-family, monospace);
+  font-size: 0.85rem;
+  white-space: pre-wrap;
+  background: var(--vscode-editor-background);
+  border: 1px solid var(--vscode-widget-border);
+}
+
+.check-result.success {
+  border-left: 3px solid var(--vscode-terminal-ansiGreen, #2ea043);
+}
+
+.check-result.error {
+  border-left: 3px solid var(--vscode-terminal-ansiRed, #f85149);
+}
+
+.check-result.pending {
+  border-left: 3px solid var(--vscode-terminal-ansiYellow, #d29922);
+}
+
+.check-result pre {
+  margin: 8px 0 0 0;
+  color: var(--vscode-foreground);
+}
+
+/* Examples Block */
+.examples-block {
+  padding: 16px;
+  background: var(--vscode-editor-background);
+  border: 1px solid var(--vscode-widget-border);
+  border-radius: 6px;
+  font-family: var(--vscode-editor-font-family, monospace);
+  font-size: 0.85rem;
+  line-height: 1.6;
+  color: var(--vscode-foreground);
+}
+
+.examples-block div {
+  margin-bottom: 12px;
+}
+
+.examples-block div:last-child {
+  margin-bottom: 0;
+}
+
+/* Misc */
+.empty-state {
+  color: var(--vscode-descriptionForeground);
+  font-style: italic;
+  text-align: center;
+  padding: 20px;
+  margin: 0;
+}
+
+.loading-state {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 200px;
+  color: var(--vscode-descriptionForeground);
+  font-style: italic;
 }
 
 .prompts-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(380px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
   gap: 20px;
-}
-
-.prompt-field {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  padding: 16px;
-  background: var(--vscode-editor-background);
-  border: 1px solid var(--vscode-input-border);
-  border-radius: var(--radius-lg);
-  transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
-}
-
-.prompt-field:hover {
-  border-color: var(--vscode-focusBorder);
-}
-
-.prompt-field:focus-within {
-  border-color: var(--vscode-focusBorder);
-  box-shadow: 0 0 0 2px rgba(var(--vscode-button-background-rgb, 0, 120, 212), 0.15);
-}
-
-.save-prompt-btn {
-  align-self: flex-end;
-  min-width: 120px;
-}
-
-/* Mode-specific accent colors for prompt cards */
-.prompt-field:nth-child(1) {
-  border-left: 3px solid #4ec9b0;
-}
-
-.prompt-field:nth-child(2) {
-  border-left: 3px solid #dcdcaa;
-}
-
-.prompt-field:nth-child(3) {
-  border-left: 3px solid #c586c0;
-}
-
-.prompt-field:nth-child(4) {
-  border-left: 3px solid #9cdcfe;
-}
-
-/* ===== Responsive ===== */
-@media (max-width: 800px) {
-  .prompts-grid {
-    grid-template-columns: 1fr;
-  }
-}
-
-@media (max-width: 500px) {
-  .prompt-field {
-    padding: 12px;
-  }
-
-  .settings-title {
-    font-size: 16px;
-  }
 }
